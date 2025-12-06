@@ -1,5 +1,11 @@
 <Solution>
   <Project Path="Tusk.Domain/Tusk.Domain.csproj" />
+  <Folder Name="/Solution Items/">
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path="LICENSE.txt" />
+    <File Path="README.md" />
+  </Folder>
   <Project Path="Tusk.Application/Tusk.Application.csproj" />
   <Project Path="Tusk.Infrastructure/Tusk.Infrastructure.csproj" />
   <Project Path="Tusk/Tusk.csproj" />
