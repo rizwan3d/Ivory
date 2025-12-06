@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
+  build:
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -46,9 +46,9 @@ jobs:
       - name: Publish AOT single file (${{ matrix.rid }})
         shell: bash
         run: |
-          dotnet publish $PROJECT_PATH \
-            -c $CONFIGURATION \
-            -r ${{ matrix.rid }} \
+          dotnet publish "$PROJECT_PATH" \
+            -c "$CONFIGURATION" \
+            -r "${{ matrix.rid }}" \
             -p:PublishSingleFile=true \
             -p:SelfContained=true \
             -p:PublishAot=true \
@@ -61,14 +61,40 @@ jobs:
           OUT_DIR="Tusk/bin/$CONFIGURATION/net10.0/${{ matrix.rid }}/publish"
           BINARY_NAME="tusk"
 
+          # Rename Tusk/Tusk.exe -> tusk/tusk.exe
           mv "$OUT_DIR/Tusk" "$OUT_DIR/$BINARY_NAME" 2>/dev/null || \
           mv "$OUT_DIR/Tusk.exe" "$OUT_DIR/$BINARY_NAME.exe"
 
-          tar -C "$OUT_DIR" -czf "${BINARY_NAME}-${{ matrix.rid }}.tar.gz" .
+          # Create tar.gz in the workspace root
+          TAR_NAME="${BINARY_NAME}-${{ matrix.rid }}.tar.gz"
+          tar -C "$OUT_DIR" -czf "$TAR_NAME" .
 
-      - name: Upload Release Assets
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tusk-${{ matrix.rid }}
+          path: tusk-${{ matrix.rid }}.tar.gz
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tusk-*
+          merge-multiple: true
+
+      - name: List downloaded files (debug)
+        run: ls -R
+
+      - name: Create / Update Release and upload assets
         uses: softprops/action-gh-release@v2
-        if: github.ref_type == 'tag'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: |
-            tusk-${{ matrix.rid }}.tar.gz
+            tusk-*.tar.gz
