@@ -9,23 +9,13 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
+  build-and-release:
+    runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-            rid: win-x64
-          - os: windows-latest
-            rid: win-arm64
-          - os: ubuntu-latest
-            rid: linux-x64
-          - os: macos-latest
-            rid: osx-x64
-          - os: macos-latest
-            rid: osx-arm64
+        rid: [win-x64, win-arm64, linux-x64, osx-x64, osx-arm64]
 
     env:
       PROJECT_PATH: Tusk/Tusk.csproj
@@ -44,11 +34,10 @@ jobs:
         run: dotnet restore $PROJECT_PATH
 
       - name: Publish AOT single file (${{ matrix.rid }})
-        shell: bash
         run: |
-          dotnet publish "$PROJECT_PATH" \
-            -c "$CONFIGURATION" \
-            -r "${{ matrix.rid }}" \
+          dotnet publish $PROJECT_PATH \
+            -c $CONFIGURATION \
+            -r ${{ matrix.rid }} \
             -p:PublishSingleFile=true \
             -p:SelfContained=true \
             -p:PublishAot=true \
@@ -56,16 +45,18 @@ jobs:
             -p:DebugType=none
 
       - name: Archive binary
-        shell: bash
         run: |
           OUT_DIR="Tusk/bin/$CONFIGURATION/net10.0/${{ matrix.rid }}/publish"
-          BINARY_NAME="tusk"
+          BINARY_NAME="tusk-${{ matrix.rid }}"
+          mv "$OUT_DIR/Tusk" "$OUT_DIR/$BINARY_NAME" 2>/dev/null || mv "$OUT_DIR/Tusk.exe" "$OUT_DIR/$BINARY_NAME.exe"
+          tar -C "$OUT_DIR" -czf "${BINARY_NAME}.tar.gz" .
 
-          # Rename Tusk/Tusk.exe -> tusk/tusk.exe
-          mv "$OUT_DIR/Tusk" "$OUT_DIR/$BINARY_NAME" 2>/dev/null || \
-          mv "$OUT_DIR/Tusk.exe" "$OUT_DIR/$BINARY_NAME.exe"
-
-          # Create tar.gz in the workspace root
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
+        with:
+          files: |
+            tusk-${{ matrix.rid }}*.tar.gz          # Create tar.gz in the workspace root
           TAR_NAME="${BINARY_NAME}-${{ matrix.rid }}.tar.gz"
           tar -C "$OUT_DIR" -czf "$TAR_NAME" .
 
