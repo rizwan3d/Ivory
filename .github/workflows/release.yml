@@ -10,12 +10,24 @@ permissions:
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        rid: [win-x64, win-arm64, linux-x64, osx-x64, osx-arm64]
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: windows-latest
+            rid: win-arm64
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: ubuntu-latest
+            rid: linux-arm64
+          - os: macos-latest
+            rid: osx-x64
+          - os: macos-latest
+            rid: osx-arm64
 
     env:
       PROJECT_PATH: Tusk/Tusk.csproj
@@ -34,6 +46,7 @@ jobs:
         run: dotnet restore $PROJECT_PATH
 
       - name: Publish AOT single file (${{ matrix.rid }})
+        shell: bash
         run: |
           dotnet publish $PROJECT_PATH \
             -c $CONFIGURATION \
@@ -45,6 +58,7 @@ jobs:
             -p:DebugType=none
 
       - name: Archive binary
+        shell: bash
         run: |
           OUT_DIR="Tusk/bin/$CONFIGURATION/net10.0/${{ matrix.rid }}/publish"
           BINARY_NAME="tusk-${{ matrix.rid }}"
@@ -56,36 +70,5 @@ jobs:
         if: github.ref_type == 'tag'
         with:
           files: |
-            tusk-${{ matrix.rid }}*.tar.gz          # Create tar.gz in the workspace root
-          TAR_NAME="${BINARY_NAME}-${{ matrix.rid }}.tar.gz"
-          tar -C "$OUT_DIR" -czf "$TAR_NAME" .
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tusk-${{ matrix.rid }}
-          path: tusk-${{ matrix.rid }}.tar.gz
-
-  release:
-    name: Create GitHub Release
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: tusk-*
-          merge-multiple: true
-
-      - name: List downloaded files (debug)
-        run: ls -R
-
-      - name: Create / Update Release and upload assets
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          files: |
+            tusk-${{ matrix.rid }}*.tar.gz          files: |
             tusk-*.tar.gz
