@@ -70,5 +70,4 @@ jobs:
         if: github.ref_type == 'tag'
         with:
           files: |
-            tusk-${{ matrix.rid }}*.tar.gz          files: |
-            tusk-*.tar.gz
+            tusk-${{ matrix.rid }}*.tar.gz
