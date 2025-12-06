@@ -61,7 +61,7 @@ jobs:
           OUT_DIR="Tusk/bin/$CONFIGURATION/net10.0/${{ matrix.rid }}/publish"
           BINARY_NAME="tusk"
           mv "$OUT_DIR/Tusk" "$OUT_DIR/$BINARY_NAME" 2>/dev/null || mv "$OUT_DIR/Tusk.exe" "$OUT_DIR/$BINARY_NAME.exe"
-          tar -C "$OUT_DIR" -czf "${BINARY_NAME}.tar.gz" .
+          tar -C "$OUT_DIR" -czf "${BINARY_NAME}-${{ matrix.rid }}.tar.gz" .
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
