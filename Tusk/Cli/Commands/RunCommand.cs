@@ -2,6 +2,9 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using Tusk.Application.Config;
 using Tusk.Application.Php;
+using Tusk.Cli.Execution;
+using Tusk.Cli.Exceptions;
+using Tusk.Cli.Formatting;
 using Tusk.Domain.Config;
 
 namespace Tusk.Cli.Commands;
@@ -29,55 +32,62 @@ internal static class RunCommand
 
         command.SetAction(async parseResult =>
         {
-            var phpVersionSpec = parseResult.GetValue(phpVersionOption) ?? string.Empty;
-            var scriptOrFile = parseResult.GetValue(scriptArgument) ?? string.Empty;
-            var extraArgs = parseResult.GetValue(scriptArgsArgument) ?? Array.Empty<string>();
-
-            var configResult = await configProvider.LoadAsync(Environment.CurrentDirectory).ConfigureAwait(false);
-
-            if (!string.IsNullOrWhiteSpace(scriptOrFile) &&
-                configResult.Config is not null &&
-                configResult.Config.Scripts.TryGetValue(scriptOrFile, out var script))
+            await CommandExecutor.RunAsync(async _ =>
             {
-                Console.WriteLine($"[tusk] Running script {scriptOrFile} from tusk.json (php={phpVersionSpec})");
+                var phpVersionSpec = parseResult.GetValue(phpVersionOption) ?? string.Empty;
+                var scriptOrFile = parseResult.GetValue(scriptArgument) ?? string.Empty;
+                var extraArgs = parseResult.GetValue(scriptArgsArgument) ?? Array.Empty<string>();
 
-                var finalArgs = new List<string>();
-
-                foreach (var ini in configResult.Config.Php.Ini)
+                if (string.IsNullOrWhiteSpace(scriptOrFile))
                 {
-                    finalArgs.Add("-d");
-                    finalArgs.Add(ini);
+                    throw new TuskCliException("You must provide a script name from tusk.json or a PHP file path.");
                 }
 
-                finalArgs.AddRange(configResult.Config.Php.Args);
-                finalArgs.AddRange(script.PhpArgs);
+                var configResult = await configProvider.LoadAsync(Environment.CurrentDirectory).ConfigureAwait(false);
 
-                if (string.IsNullOrWhiteSpace(script.PhpFile))
+                if (configResult.Config is not null &&
+                    configResult.Config.Scripts.TryGetValue(scriptOrFile, out var script))
                 {
-                    throw new InvalidOperationException($"Script '{scriptOrFile}' in tusk.json is missing 'phpFile'.");
+                    CliConsole.Info($"Running script {scriptOrFile} from tusk.json (php={phpVersionSpec})");
+
+                    var finalArgs = new List<string>();
+
+                    foreach (var ini in configResult.Config.Php.Ini)
+                    {
+                        finalArgs.Add("-d");
+                        finalArgs.Add(ini);
+                    }
+
+                    finalArgs.AddRange(configResult.Config.Php.Args);
+                    finalArgs.AddRange(script.PhpArgs);
+
+                    if (string.IsNullOrWhiteSpace(script.PhpFile))
+                    {
+                        throw new TuskCliException($"Script '{scriptOrFile}' in tusk.json is missing 'phpFile'.");
+                    }
+
+                    var phpFilePath = configResult.RootDirectory is not null
+                        ? Path.Combine(configResult.RootDirectory, script.PhpFile)
+                        : script.PhpFile;
+
+                    finalArgs.Add(phpFilePath);
+                    finalArgs.AddRange(script.Args);
+                    finalArgs.AddRange(extraArgs);
+
+                    await runtime.RunPhpAsync(null, finalArgs.ToArray(), phpVersionSpec).ConfigureAwait(false);
                 }
-
-                var phpFilePath = configResult.RootDirectory is not null
-                    ? Path.Combine(configResult.RootDirectory, script.PhpFile)
-                    : script.PhpFile;
-
-                finalArgs.Add(phpFilePath);
-                finalArgs.AddRange(script.Args);
-                finalArgs.AddRange(extraArgs);
-
-                await runtime.RunPhpAsync(null, finalArgs.ToArray(), phpVersionSpec).ConfigureAwait(false);
-            }
-            else
-            {
-                Console.WriteLine($"[tusk] Running PHP file '{scriptOrFile}' (php={phpVersionSpec})");
-                var filePath = scriptOrFile;
-                if (!Path.IsPathRooted(filePath))
+                else
                 {
-                    filePath = Path.Combine(Environment.CurrentDirectory, filePath);
-                }
+                    CliConsole.Info($"Running PHP file '{scriptOrFile}' (php={phpVersionSpec})");
+                    var filePath = scriptOrFile;
+                    if (!Path.IsPathRooted(filePath))
+                    {
+                        filePath = Path.Combine(Environment.CurrentDirectory, filePath);
+                    }
 
-                await runtime.RunPhpAsync(filePath, extraArgs, phpVersionSpec).ConfigureAwait(false);
-            }
+                    await runtime.RunPhpAsync(filePath, extraArgs, phpVersionSpec).ConfigureAwait(false);
+                }
+            }).ConfigureAwait(false);
         });
 
         return command;

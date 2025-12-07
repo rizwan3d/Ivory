@@ -1,5 +1,7 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using Tusk.Cli.Execution;
+using Tusk.Cli.Formatting;
 using Tusk.Application.Php;
 
 namespace Tusk.Cli.Commands;
@@ -27,10 +29,14 @@ internal static class PruneCommand
 
         command.SetAction(async parseResult =>
         {
-            int keep = parseResult.GetValue(keepOption);
-            bool includeCache = parseResult.GetValue(includeCacheOption);
-            var removed = await installer.PruneAsync(keep, includeCache).ConfigureAwait(false);
-            await Console.Out.WriteLineAsync($"[tusk] Pruned {removed} installation(s).").ConfigureAwait(false);
+            await CommandExecutor.RunAsync(async _ =>
+            {
+                int keep = parseResult.GetValue(keepOption);
+                bool includeCache = parseResult.GetValue(includeCacheOption);
+                CliConsole.Info("Pruning old PHP installations...");
+                var removed = await installer.PruneAsync(keep, includeCache).ConfigureAwait(false);
+                CliConsole.Success($"Pruned {removed} installation(s).");
+            }).ConfigureAwait(false);
         });
 
         return command;

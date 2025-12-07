@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Diagnostics.CodeAnalysis;
 using Tusk.Cli.Formatting;
+using Tusk.Cli.Execution;
 using Tusk.Infrastructure.Php;
 
 namespace Tusk.Cli.Commands;
@@ -21,21 +22,24 @@ internal static class AvailableCommand
 
         command.SetAction(async parseResult =>
         {
-            bool asJson = parseResult.GetValue(jsonOption);
-            var list = await feed.ListAsync().ConfigureAwait(false);
-
-            if (asJson)
+            await CommandExecutor.RunAsync(async _ =>
             {
-                var payload = list.Select(x => new { version = x.Version, file = x.File, sha256 = x.Sha }).ToArray();
-                ConsoleFormatter.PrintDoctor(payload, true);
-                return;
-            }
+                bool asJson = parseResult.GetValue(jsonOption);
+                var list = await feed.ListAsync().ConfigureAwait(false);
 
-            Console.WriteLine("[tusk] Available PHP (Windows x64 NTS):");
-            foreach (var item in list)
-            {
-                Console.WriteLine($"  - {item.Version} ({item.File})");
-            }
+                if (asJson)
+                {
+                    var payload = list.Select(x => new { version = x.Version, file = x.File, sha256 = x.Sha }).ToArray();
+                    ConsoleFormatter.PrintDoctor(payload, true);
+                    return;
+                }
+
+                CliConsole.Info("Available PHP (Windows x64 NTS):");
+                foreach (var item in list)
+                {
+                    CliConsole.Success($"  {item.Version} ({item.File})");
+                }
+            }).ConfigureAwait(false);
         });
 
         return command;

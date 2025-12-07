@@ -19,7 +19,10 @@ internal static class ConsoleFormatter
 
         foreach (var v in versions.OrderBy(v => v.Value))
         {
+            var previous = Console.ForegroundColor;
+            Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine($"  - {v.Value}");
+            Console.ForegroundColor = previous;
         }
     }
 

@@ -3,6 +3,8 @@ using System.CommandLine.Invocation;
 using Tusk.Application.Composer;
 using Tusk.Application.Config;
 using Tusk.Domain.Config;
+using Tusk.Cli.Execution;
+using Tusk.Cli.Formatting;
 
 namespace Tusk.Cli.Commands;
 
@@ -23,16 +25,20 @@ internal static class ComposerCommand
 
         command.SetAction(async parseResult =>
         {
-            string phpVersionSpec = parseResult.GetValue(phpVersionOption) ?? string.Empty;
-            string[] argsToComposer = parseResult.GetValue(composerArgs) ?? [];
+            await CommandExecutor.RunAsync(async _ =>
+            {
+                string phpVersionSpec = parseResult.GetValue(phpVersionOption) ?? string.Empty;
+                string[] argsToComposer = parseResult.GetValue(composerArgs) ?? [];
 
-            var configResult = await configProvider.LoadAsync(Environment.CurrentDirectory).ConfigureAwait(false);
-            await composerService.RunComposerAsync(
-                argsToComposer,
-                phpVersionSpec,
-                configResult.Config,
-                configResult.RootDirectory,
-                CancellationToken.None).ConfigureAwait(false);
+                var configResult = await configProvider.LoadAsync(Environment.CurrentDirectory).ConfigureAwait(false);
+                CliConsole.Info($"Running Composer (php={phpVersionSpec}).");
+                await composerService.RunComposerAsync(
+                    argsToComposer,
+                    phpVersionSpec,
+                    configResult.Config,
+                    configResult.RootDirectory,
+                    CancellationToken.None).ConfigureAwait(false);
+            }).ConfigureAwait(false);
         });
 
         return command;

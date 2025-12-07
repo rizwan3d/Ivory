@@ -1,6 +1,8 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using Tusk.Application.Php;
+using Tusk.Cli.Execution;
+using Tusk.Cli.Formatting;
 
 namespace Tusk.Cli.Commands;
 
@@ -21,10 +23,14 @@ internal static class PhpCommand
 
         command.SetAction(async parseResult =>
         {
-            string phpVersionSpec = parseResult.GetValue(phpVersionOption) ?? string.Empty;
-            string[] argsToPhp = parseResult.GetValue(phpArgs) ?? Array.Empty<string>();
-            Console.WriteLine($"[tusk] php (version={phpVersionSpec}) {string.Join(' ', argsToPhp)}");
-            int exitCode = await runtime.RunPhpAsync(null, argsToPhp, phpVersionSpec).ConfigureAwait(false);
+            await CommandExecutor.RunAsync(async _ =>
+            {
+                string phpVersionSpec = parseResult.GetValue(phpVersionOption) ?? string.Empty;
+                string[] argsToPhp = parseResult.GetValue(phpArgs) ?? Array.Empty<string>();
+                CliConsole.Info($"php (version={phpVersionSpec}) {string.Join(' ', argsToPhp)}");
+                int exitCode = await runtime.RunPhpAsync(null, argsToPhp, phpVersionSpec).ConfigureAwait(false);
+                CliConsole.Success($"PHP exited with code {exitCode}.");
+            }).ConfigureAwait(false);
         });
 
         return command;

@@ -2,6 +2,9 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using Tusk.Application.Php;
 using Tusk.Domain.Php;
+using Tusk.Cli.Execution;
+using Tusk.Cli.Exceptions;
+using Tusk.Cli.Formatting;
 
 namespace Tusk.Cli.Commands;
 
@@ -21,16 +24,42 @@ internal static class DefaultCommand
 
         command.SetAction(async parseResult =>
         {
-            var versionText = parseResult.GetValue(versionArgument) ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(versionText))
+            await CommandExecutor.RunAsync(async context =>
             {
-                await Console.Error.WriteLineAsync("[tusk] Version cannot be empty.").ConfigureAwait(false);
-                return;
-            }
+                var versionText = parseResult.GetValue(versionArgument) ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(versionText))
+                {
+                    throw new TuskCliException("Version cannot be empty.");
+                }
 
-            var version = new PhpVersion(versionText);
-            await Console.Out.WriteLineAsync($"[tusk] Setting default PHP version to {version}...").ConfigureAwait(false);
-            await resolver.SetDefaultAsync(version).ConfigureAwait(false);
+                var version = new PhpVersion(versionText);
+                string configPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".tusk",
+                    "config.json");
+
+                string? existingConfig = null;
+                if (File.Exists(configPath))
+                {
+                    existingConfig = await File.ReadAllTextAsync(configPath).ConfigureAwait(false);
+                }
+
+                context.OnRollback(async () =>
+                {
+                    if (existingConfig is not null)
+                    {
+                        await File.WriteAllTextAsync(configPath, existingConfig).ConfigureAwait(false);
+                    }
+                    else if (File.Exists(configPath))
+                    {
+                        File.Delete(configPath);
+                    }
+                });
+
+                CliConsole.Info($"Setting default PHP version to {version}...");
+                await resolver.SetDefaultAsync(version).ConfigureAwait(false);
+                CliConsole.Success($"Default PHP version set to {version}.");
+            }).ConfigureAwait(false);
         });
 
         return command;

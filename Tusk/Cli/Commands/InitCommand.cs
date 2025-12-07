@@ -1,8 +1,12 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using System.Text;
 using System.Text.Json;
 using Tusk.Application.Php;
 using Tusk.Application.Scaffolding;
+using Tusk.Cli.Execution;
+using Tusk.Cli.Exceptions;
+using Tusk.Cli.Formatting;
 using Tusk.Cli.Helpers;
 using Tusk.Domain.Config;
 
@@ -31,162 +35,160 @@ internal static class InitCommand
 
         command.SetAction(async parseResult =>
         {
-            FrameworkKind framework = parseResult.GetValue(frameworkOption);
-            if (!Enum.IsDefined(framework))
+            await CommandExecutor.RunAsync(async context =>
             {
-                framework = FrameworkKind.Generic;
-            }
-
-            bool force = parseResult.GetValue(forceOption);
-
-            string cwd = Environment.CurrentDirectory;
-            string tuskPath = Path.Combine(cwd, "tusk.json");
-
-            if (File.Exists(tuskPath) && !force)
-            {
-                await Console.Error.WriteLineAsync(
-                    $"[tusk] tusk.json already exists at {tuskPath}. Use --force to overwrite.").ConfigureAwait(false);
-                return;
-            }
-
-            var config = TuskConfigFactory.CreateFor(framework);
-
-            string phpVersionSpec = parseResult.GetValue(phpVersionOption) ?? string.Empty;
-            var detectedVersion = await VersionHelpers.DetectPhpVersionFromPhpVAsync(resolver, phpVersionSpec).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(detectedVersion) && config is not null)
-            {
-                config.Php.Version = detectedVersion;
-            }
-
-            string composerPath = Path.Combine(cwd, "composer.json");
-            if (File.Exists(composerPath))
-            {
-                try
+                FrameworkKind framework = parseResult.GetValue(frameworkOption);
+                if (!Enum.IsDefined(framework))
                 {
-                    using var composerDoc = JsonDocument.Parse(await File.ReadAllTextAsync(composerPath).ConfigureAwait(false));
-                    var root = composerDoc.RootElement;
+                    throw new TuskCliException($"Unknown framework '{framework}'.");
+                }
 
-                    using var stream = new MemoryStream();
-                    using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
-                    writer.WriteStartObject();
+                bool force = parseResult.GetValue(forceOption);
 
-                    bool hasExtra = false;
-                    JsonElement extraElement = default;
+                string cwd = Environment.CurrentDirectory;
+                string tuskPath = Path.Combine(cwd, "tusk.json");
+                string tuskLockPath = Path.Combine(cwd, "tusk.lock");
+                string composerPath = Path.Combine(cwd, "composer.json");
+                string composerLockPath = Path.Combine(cwd, "composer.lock");
+                string publicIndexPath = Path.Combine(cwd, "public", "index.php");
 
-                    if (root.TryGetProperty("extra", out var extraElem) &&
-                        extraElem.ValueKind == JsonValueKind.Object)
+                if (File.Exists(tuskPath) && !force)
+                {
+                    throw new TuskCliException($"tusk.json already exists at {tuskPath}. Use --force to overwrite.");
+                }
+
+                RegisterFileRollback(tuskPath, context);
+
+                bool willCopyLock = File.Exists(composerLockPath) && (!File.Exists(tuskLockPath) || force);
+                if (willCopyLock || File.Exists(tuskLockPath))
+                {
+                    RegisterFileRollback(tuskLockPath, context);
+                }
+
+                if (!File.Exists(publicIndexPath))
+                {
+                    context.OnRollback(() =>
                     {
-                        hasExtra = true;
-                        extraElement = extraElem;
-                    }
-
-                    foreach (var prop in root.EnumerateObject())
-                    {
-                        if (prop.NameEquals("extra") && hasExtra)
+                        if (File.Exists(publicIndexPath))
                         {
-                            writer.WritePropertyName("extra");
-                            writer.WriteStartObject();
-
-                            foreach (var extraProp in extraElement.EnumerateObject())
+                            File.Delete(publicIndexPath);
+                            var publicDir = Path.GetDirectoryName(publicIndexPath);
+                            if (publicDir is not null &&
+                                Directory.Exists(publicDir) &&
+                                !Directory.EnumerateFileSystemEntries(publicDir).Any())
                             {
-                                if (extraProp.NameEquals("tusk"))
-                                    continue;
-
-                                writer.WritePropertyName(extraProp.Name);
-                                extraProp.Value.WriteTo(writer);
+                                Directory.Delete(publicDir);
                             }
-
-                            writer.WritePropertyName("tusk");
-                            if (config is not null)
-                            {
-                                TuskConfigSerialization.WriteTuskConfigObject(writer, config);
-                            }
-                            else
-                            {
-                                writer.WriteStartObject();
-                                writer.WriteEndObject();
-                            }
-
-                            writer.WriteEndObject();
                         }
-                        else
-                        {
-                            writer.WritePropertyName(prop.Name);
-                            prop.Value.WriteTo(writer);
-                        }
-                    }
-
-                    if (!hasExtra)
-                    {
-                        writer.WritePropertyName("extra");
-                        writer.WriteStartObject();
-                        writer.WritePropertyName("tusk");
-                        if (config is not null)
-                        {
-                            TuskConfigSerialization.WriteTuskConfigObject(writer, config);
-                        }
-                        else
-                        {
-                            writer.WriteStartObject();
-                            writer.WriteEndObject();
-                        }
-                        writer.WriteEndObject();
-                    }
-
-                    writer.WriteEndObject();
-                    await writer.FlushAsync().ConfigureAwait(false);
-
-                    await File.WriteAllBytesAsync(tuskPath, stream.ToArray()).ConfigureAwait(false);
+                    });
                 }
-                catch (IOException ex)
+
+                var config = TuskConfigFactory.CreateFor(framework);
+
+                string phpVersionSpec = parseResult.GetValue(phpVersionOption) ?? string.Empty;
+                var detectedVersion = await VersionHelpers.DetectPhpVersionFromPhpVAsync(resolver, phpVersionSpec).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(detectedVersion))
                 {
-                    await Console.Error.WriteLineAsync($"[tusk] Failed to base tusk.json on composer.json: {ex.Message}").ConfigureAwait(false);
-                    if (config is not null)
-                    {
-                        var json = TuskConfigSerialization.SerializeTuskConfig(config);
-                        await File.WriteAllTextAsync(tuskPath, json).ConfigureAwait(false);
-                    }
-                }
-                catch (UnauthorizedAccessException ex)
-                {
-                    await Console.Error.WriteLineAsync($"[tusk] Failed to base tusk.json on composer.json: {ex.Message}").ConfigureAwait(false);
-                    if (config is not null)
-                    {
-                        var json = TuskConfigSerialization.SerializeTuskConfig(config);
-                        await File.WriteAllTextAsync(tuskPath, json).ConfigureAwait(false);
-                    }
-                }
-                catch (JsonException ex)
-                {
-                    await Console.Error.WriteLineAsync($"[tusk] Failed to base tusk.json on composer.json: {ex.Message}").ConfigureAwait(false);
-                    if (config is not null)
-                    {
-                        var json = TuskConfigSerialization.SerializeTuskConfig(config);
-                        await File.WriteAllTextAsync(tuskPath, json).ConfigureAwait(false);
-                    }
+                    config.Php.Version = detectedVersion;
                 }
 
-                string composerLock = Path.Combine(cwd, "composer.lock");
-                string tuskLock = Path.Combine(cwd, "tusk.lock");
-                if (File.Exists(composerLock) && (!File.Exists(tuskLock) || force))
-                {
-                    File.Copy(composerLock, tuskLock, overwrite: true);
-                }
-            }
-            else
-            {
-                if (config is not null)
-                {
-                    var json = TuskConfigSerialization.SerializeTuskConfig(config);
-                    await File.WriteAllTextAsync(tuskPath, json).ConfigureAwait(false);
-                }
-            }
+                string tuskJson = File.Exists(composerPath)
+                    ? await CreateTuskJsonFromComposerAsync(composerPath, config).ConfigureAwait(false)
+                    : TuskConfigSerialization.SerializeTuskConfig(config);
 
-            publicIndexScaffolder.EnsureDefaultPublicIndex(cwd);
+                await File.WriteAllTextAsync(tuskPath, tuskJson).ConfigureAwait(false);
 
-            Console.WriteLine($"[tusk] Created tusk.json for framework '{framework}' in {cwd}");
+                if (willCopyLock)
+                {
+                    File.Copy(composerLockPath, tuskLockPath, overwrite: true);
+                }
+
+                publicIndexScaffolder.EnsureDefaultPublicIndex(cwd);
+
+                CliConsole.Success($"Created tusk.json for framework '{framework}' in {cwd}");
+            }).ConfigureAwait(false);
         });
 
         return command;
+    }
+
+    private static async Task<string> CreateTuskJsonFromComposerAsync(string composerPath, TuskConfig config)
+    {
+        using var composerDoc = JsonDocument.Parse(await File.ReadAllTextAsync(composerPath).ConfigureAwait(false));
+        var root = composerDoc.RootElement;
+
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+        writer.WriteStartObject();
+
+        bool hasExtra = false;
+        JsonElement extraElement = default;
+
+        if (root.TryGetProperty("extra", out var extraElem) &&
+            extraElem.ValueKind == JsonValueKind.Object)
+        {
+            hasExtra = true;
+            extraElement = extraElem;
+        }
+
+        foreach (var prop in root.EnumerateObject())
+        {
+            if (prop.NameEquals("extra") && hasExtra)
+            {
+                writer.WritePropertyName("extra");
+                writer.WriteStartObject();
+
+                foreach (var extraProp in extraElement.EnumerateObject())
+                {
+                    if (extraProp.NameEquals("tusk"))
+                        continue;
+
+                    writer.WritePropertyName(extraProp.Name);
+                    extraProp.Value.WriteTo(writer);
+                }
+
+                writer.WritePropertyName("tusk");
+                TuskConfigSerialization.WriteTuskConfigObject(writer, config);
+
+                writer.WriteEndObject();
+            }
+            else
+            {
+                writer.WritePropertyName(prop.Name);
+                prop.Value.WriteTo(writer);
+            }
+        }
+
+        if (!hasExtra)
+        {
+            writer.WritePropertyName("extra");
+            writer.WriteStartObject();
+            writer.WritePropertyName("tusk");
+            TuskConfigSerialization.WriteTuskConfigObject(writer, config);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndObject();
+        await writer.FlushAsync().ConfigureAwait(false);
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void RegisterFileRollback(string path, CommandExecutionContext context)
+    {
+        bool existed = File.Exists(path);
+        byte[]? originalBytes = existed ? File.ReadAllBytes(path) : null;
+
+        context.OnRollback(async () =>
+        {
+            if (existed && originalBytes is not null)
+            {
+                await File.WriteAllBytesAsync(path, originalBytes).ConfigureAwait(false);
+            }
+            else if (!existed && File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        });
     }
 }

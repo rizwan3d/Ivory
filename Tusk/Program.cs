@@ -20,16 +20,33 @@ namespace Tusk;
 
 internal static class Program
 {
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Global handler should capture and display every CLI failure uniformly.")]
     public static async Task<int> Main(string[] args)
     {
-        var builder = Host.CreateApplicationBuilder(args);
-        ConfigureServices(builder.Services);
+        AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
+        {
+            if (eventArgs.ExceptionObject is Exception ex)
+            {
+                GlobalExceptionHandler.Handle(ex);
+            }
+        };
 
-        using IHost host = builder.Build();
+        try
+        {
+            var builder = Host.CreateApplicationBuilder(args);
+            ConfigureServices(builder.Services);
 
-        RootCommand rootCommand = await CommandLineFactory.CreateAsync(host.Services).ConfigureAwait(false);
+            using IHost host = builder.Build();
 
-        return await rootCommand.Parse(args).InvokeAsync().ConfigureAwait(false);
+            RootCommand rootCommand = await CommandLineFactory.CreateAsync(host.Services).ConfigureAwait(false);
+
+            return await rootCommand.Parse(args).InvokeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            GlobalExceptionHandler.Handle(ex);
+            return 1;
+        }
     }
 
     private static void ConfigureServices(IServiceCollection services)

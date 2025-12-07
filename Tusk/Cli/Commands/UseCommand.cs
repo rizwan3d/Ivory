@@ -1,5 +1,8 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using Tusk.Cli.Execution;
+using Tusk.Cli.Exceptions;
+using Tusk.Cli.Formatting;
 using Tusk.Domain.Php;
 
 namespace Tusk.Cli.Commands;
@@ -20,17 +23,35 @@ internal static class UseCommand
 
         command.SetAction(async parseResult =>
         {
-            var versionText = parseResult.GetValue(versionArgument) ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(versionText))
+            await CommandExecutor.RunAsync(async context =>
             {
-                await Console.Error.WriteLineAsync("[tusk] Version cannot be empty.").ConfigureAwait(false);
-                return;
-            }
+                var versionText = parseResult.GetValue(versionArgument) ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(versionText))
+                {
+                    throw new TuskCliException("Version cannot be empty.");
+                }
 
-            var version = new PhpVersion(versionText);
-            await Console.Out.WriteLineAsync($"[tusk] Setting PHP {version} for {Environment.CurrentDirectory}...").ConfigureAwait(false);
-            var path = Path.Combine(Environment.CurrentDirectory, ".tusk.php-version");
-            await File.WriteAllTextAsync(path, version.Value).ConfigureAwait(false);
+                var version = new PhpVersion(versionText);
+                var path = Path.Combine(Environment.CurrentDirectory, ".tusk.php-version");
+                bool existed = File.Exists(path);
+                string? previousValue = existed ? await File.ReadAllTextAsync(path).ConfigureAwait(false) : null;
+
+                context.OnRollback(async () =>
+                {
+                    if (existed && previousValue is not null)
+                    {
+                        await File.WriteAllTextAsync(path, previousValue).ConfigureAwait(false);
+                    }
+                    else if (!existed && File.Exists(path))
+                    {
+                        File.Delete(path);
+                    }
+                });
+
+                CliConsole.Info($"Setting PHP {version} for {Environment.CurrentDirectory}...");
+                await File.WriteAllTextAsync(path, version.Value).ConfigureAwait(false);
+                CliConsole.Success($"PHP {version} pinned for this project.");
+            }).ConfigureAwait(false);
         });
 
         return command;

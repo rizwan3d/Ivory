@@ -1,5 +1,8 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using Tusk.Cli.Execution;
+using Tusk.Cli.Exceptions;
+using Tusk.Cli.Formatting;
 using Tusk.Application.Php;
 using Tusk.Domain.Php;
 
@@ -27,16 +30,26 @@ internal static class InstallCommand
 
         command.SetAction(async parseResult =>
         {
-            var versionText = parseResult.GetValue(versionArgument);
-            if (string.IsNullOrWhiteSpace(versionText))
+            await CommandExecutor.RunAsync(async context =>
             {
-                await Console.Error.WriteLineAsync("[tusk] Version cannot be empty.").ConfigureAwait(false);
-                return;
-            }
-            bool ignoreChecksum = parseResult.GetValue(ignoreChecksumOption);
-            var version = new PhpVersion(versionText);
-            Console.WriteLine($"[tusk] Installing PHP {version}...");
-            await installer.InstallAsync(version, ignoreChecksum).ConfigureAwait(false);
+                var versionText = parseResult.GetValue(versionArgument);
+                if (string.IsNullOrWhiteSpace(versionText))
+                {
+                    throw new TuskCliException("Version cannot be empty.");
+                }
+                bool ignoreChecksum = parseResult.GetValue(ignoreChecksumOption);
+                var version = new PhpVersion(versionText);
+
+                context.OnRollback(async () =>
+                {
+                    CliConsole.Warning($"Rolling back installation of PHP {version}...");
+                    await installer.UninstallAsync(version).ConfigureAwait(false);
+                });
+
+                CliConsole.Info($"Installing PHP {version}...");
+                await installer.InstallAsync(version, ignoreChecksum).ConfigureAwait(false);
+                CliConsole.Success($"PHP {version} installed.");
+            }).ConfigureAwait(false);
         });
 
         return command;
