@@ -24,6 +24,7 @@ internal static class CommandLineFactory
         var environmentProbe = services.GetRequiredService<IEnvironmentProbe>();
         var publicIndexScaffolder = services.GetRequiredService<IPublicIndexScaffolder>();
         var windowsFeed = services.GetRequiredService<WindowsPhpFeed>();
+        var projectPhpHomeProvider = services.GetRequiredService<IProjectPhpHomeProvider>();
 
         PhpVersion phpVersion = await resolver.ResolveForCurrentDirectoryAsync().ConfigureAwait(false);
 
@@ -50,7 +51,8 @@ internal static class CommandLineFactory
         rootCommand.Subcommands.Add(PhpCommand.Create(runtime, phpVersionOption));
         rootCommand.Subcommands.Add(InitCommand.Create(resolver, phpVersionOption, publicIndexScaffolder));
         rootCommand.Subcommands.Add(ComposerCommand.Create(composerService, phpVersionOption, configProvider));
-        rootCommand.Subcommands.Add(DoctorCommand.Create(installer, resolver, phpVersionOption, configProvider, composerService, environmentProbe));
+        rootCommand.Subcommands.Add(DoctorCommand.Create(installer, resolver, phpVersionOption, configProvider, composerService, environmentProbe, projectPhpHomeProvider));
+        rootCommand.Subcommands.Add(IsolateCommand.Create(projectPhpHomeProvider));
 
         return rootCommand;
     }

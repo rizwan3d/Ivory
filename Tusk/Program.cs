@@ -76,5 +76,6 @@ internal static class Program
         services.AddSingleton<IComposerService, ComposerService>();
         services.AddSingleton<IEnvironmentProbe, EnvironmentProbe>();
         services.AddSingleton<IPublicIndexScaffolder, PublicIndexScaffolder>();
+        services.AddSingleton<IProjectPhpHomeProvider, ProjectPhpHomeProvider>();
     }
 }

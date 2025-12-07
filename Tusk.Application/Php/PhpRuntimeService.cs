@@ -1,14 +1,18 @@
 using Tusk.Application.Runtime;
 using Tusk.Domain.Php;
-using System;
 
 namespace Tusk.Application.Php;
 
-public class PhpRuntimeService(IPhpInstaller installer, IPhpVersionResolver resolver, IProcessRunner processRunner) : IPhpRuntimeService
+public class PhpRuntimeService(
+    IPhpInstaller installer,
+    IPhpVersionResolver resolver,
+    IProcessRunner processRunner,
+    IProjectPhpHomeProvider projectPhpHomeProvider) : IPhpRuntimeService
 {
     private readonly IPhpInstaller _installer = installer;
     private readonly IPhpVersionResolver _resolver = resolver;
     private readonly IProcessRunner _processRunner = processRunner;
+    private readonly IProjectPhpHomeProvider _projectPhpHomeProvider = projectPhpHomeProvider;
 
     public Task<int> RunPhpAsync(
         string? scriptOrCommand,
@@ -101,6 +105,21 @@ public class PhpRuntimeService(IPhpInstaller installer, IPhpVersionResolver reso
         }
         catch
         {
+        }
+
+        var projectHome = await _projectPhpHomeProvider
+            .TryGetExistingAsync(System.Environment.CurrentDirectory, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (projectHome is not null)
+        {
+            env["PHPRC"] = projectHome.IniPath;
+            env["PHP_INI_SCAN_DIR"] = projectHome.ExtensionsPath;
+            env["TUSK_PHP_HOME"] = projectHome.HomePath;
+            if (projectHome.ProjectRoot is not null)
+            {
+                env["TUSK_PROJECT_ROOT"] = projectHome.ProjectRoot;
+            }
         }
 
         string workingDir = System.Environment.CurrentDirectory;

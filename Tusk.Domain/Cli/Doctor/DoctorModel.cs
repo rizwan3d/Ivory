@@ -23,6 +23,8 @@ public sealed class DoctorModel
 
     public required ComposerInfo Composer { get; init; }
 
+    public ProjectPhpHomeInfo? ProjectPhpHome { get; init; }
+
     public sealed class ProjectInfo
     {
         public string? Root { get; init; }
@@ -41,5 +43,13 @@ public sealed class DoctorModel
     {
         public string? ComposerPhar { get; init; }
         public string? ComposerExe { get; init; }
+    }
+
+    public sealed class ProjectPhpHomeInfo
+    {
+        public string? Home { get; init; }
+        public string? Ini { get; init; }
+        public string? Extensions { get; init; }
+        public bool Enabled { get; init; }
     }
 }

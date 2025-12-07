@@ -23,7 +23,8 @@ internal static class DoctorCommand
         Option<string> phpVersionOption,
         IProjectConfigProvider configProvider,
         IComposerService composerService,
-        IEnvironmentProbe environmentProbe)
+        IEnvironmentProbe environmentProbe,
+        IProjectPhpHomeProvider projectPhpHomeProvider)
     {
         var jsonOption = new Option<bool>("--json")
         {
@@ -50,6 +51,7 @@ internal static class DoctorCommand
 
                 var configResult = await configProvider.LoadAsync(cwd).ConfigureAwait(false);
                 string? projectPhpVersion = configResult.Config?.Php?.Version;
+                var projectHome = await projectPhpHomeProvider.TryGetExistingAsync(cwd).ConfigureAwait(false);
 
                 string? globalDefaultVersion = null;
                 if (File.Exists(globalConfigPath))
@@ -152,7 +154,17 @@ internal static class DoctorCommand
                         {
                             ComposerPhar = composerPhar,
                             ComposerExe = composerExe
-                        }
+                        },
+
+                        ProjectPhpHome = projectHome is null
+                            ? null
+                            : new DoctorModel.ProjectPhpHomeInfo
+                            {
+                                Home = projectHome.HomePath,
+                                Ini = projectHome.IniPath,
+                                Extensions = projectHome.ExtensionsPath,
+                                Enabled = true
+                            }
                     };
 
                     ConsoleFormatter.PrintDoctor(payload, true);
@@ -176,6 +188,13 @@ internal static class DoctorCommand
                 {
                     Console.WriteLine($"  tusk.json:       {Path.Combine(configResult.RootDirectory, "tusk.json")}");
                     Console.WriteLine($"  PHP version:     {(string.IsNullOrWhiteSpace(projectPhpVersion) ? "(none)" : projectPhpVersion)}");
+                    Console.WriteLine($"  Isolation:       {(projectHome is null ? "disabled (run `tusk isolate` to enable)" : "enabled")}");
+                    if (projectHome is not null)
+                    {
+                        Console.WriteLine($"    Home:          {projectHome.HomePath}");
+                        Console.WriteLine($"    php.ini:       {projectHome.IniPath}");
+                        Console.WriteLine($"    conf.d:        {projectHome.ExtensionsPath}");
+                    }
                 }
                 else
                 {
