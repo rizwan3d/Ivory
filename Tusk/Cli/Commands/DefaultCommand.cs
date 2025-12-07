@@ -17,7 +17,7 @@ internal static class DefaultCommand
             Description = "PHP version (e.g. 8.3, 8.2)."
         };
 
-        var command = new Command("default", "Set the default/global PHP version.")
+        var command = new Command("default", "Set the default/global PHP version.\nExamples:\n  tusk default 8.3\n  tusk default system")
         {
             versionArgument
         };

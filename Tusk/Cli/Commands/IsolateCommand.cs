@@ -11,10 +11,7 @@ internal static class IsolateCommand
 {
     public static Command Create(IProjectPhpHomeProvider provider)
     {
-        var command = new Command("isolate")
-        {
-            Description = "Create a per-project PHP home with its own php.ini and conf.d directory"
-        };
+        var command = new Command("isolate", "Create a per-project PHP home with its own php.ini and conf.d directory.\nExamples:\n  tusk isolate");
 
         command.SetAction(async _ =>
         {

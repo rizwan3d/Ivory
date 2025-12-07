@@ -18,7 +18,7 @@ internal static class ComposerCommand
             Arity = ArgumentArity.ZeroOrMore
         };
 
-        var command = new Command("composer", "Run Composer using the resolved PHP version.")
+        var command = new Command("composer", "Run Composer using the resolved PHP version.\nExamples:\n  tusk composer install\n  tusk composer --php 8.3 -- update")
         {
             composerArgs
         };

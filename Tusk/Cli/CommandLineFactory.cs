@@ -25,6 +25,7 @@ internal static class CommandLineFactory
         var publicIndexScaffolder = services.GetRequiredService<IPublicIndexScaffolder>();
         var windowsFeed = services.GetRequiredService<WindowsPhpFeed>();
         var projectPhpHomeProvider = services.GetRequiredService<IProjectPhpHomeProvider>();
+        var manifest = services.GetRequiredService<PhpVersionsManifest>();
 
         PhpVersion phpVersion = await resolver.ResolveForCurrentDirectoryAsync().ConfigureAwait(false);
 
@@ -36,7 +37,7 @@ internal static class CommandLineFactory
         phpVersionOption.Aliases.Add("-p");
         phpVersionOption.Recursive = true;
 
-        var rootCommand = new RootCommand("Tusk - PHP runtime and version manager for PHP.");
+        var rootCommand = new RootCommand("Tusk - PHP runtime and version manager for PHP.\nExamples:\n  tusk install 8.3\n  tusk run serve\n  tusk composer install\n  tusk doctor");
         rootCommand.Options.Add(phpVersionOption);
 
         rootCommand.Subcommands.Add(RunCommand.Create(runtime, phpVersionOption, configProvider));
@@ -53,6 +54,7 @@ internal static class CommandLineFactory
         rootCommand.Subcommands.Add(ComposerCommand.Create(composerService, phpVersionOption, configProvider));
         rootCommand.Subcommands.Add(DoctorCommand.Create(installer, resolver, phpVersionOption, configProvider, composerService, environmentProbe, projectPhpHomeProvider));
         rootCommand.Subcommands.Add(IsolateCommand.Create(projectPhpHomeProvider));
+        rootCommand.Subcommands.Add(CompletionCommand.Create(rootCommand, configProvider, manifest));
 
         return rootCommand;
     }

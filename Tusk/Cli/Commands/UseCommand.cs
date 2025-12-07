@@ -16,7 +16,7 @@ internal static class UseCommand
             Description = "PHP version (e.g. 8.3, 8.2, latest)."
         };
 
-        var command = new Command("use", "Use a PHP version for this project (.tusk.php-version).")
+        var command = new Command("use", "Use a PHP version for this project (.tusk.php-version).\nExamples:\n  tusk use 8.3\n  tusk use system")
         {
             versionArgument
         };

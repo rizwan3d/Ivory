@@ -21,7 +21,7 @@ internal static class InstallCommand
             Description = "Skip archive checksum validation (use with caution).",
             DefaultValueFactory = (e) => true
         };
-        var command = new Command("install", "Install a PHP runtime version.")
+        var command = new Command("install", "Install a PHP runtime version.\nExamples:\n  tusk install 8.3\n  tusk install latest")
         {
             versionArgument,
             ignoreChecksumOption

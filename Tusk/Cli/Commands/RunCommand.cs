@@ -24,7 +24,7 @@ internal static class RunCommand
             Arity = ArgumentArity.ZeroOrMore
         };
 
-        var command = new Command("run", "Run a named script from tusk.json or a PHP file.")
+        var command = new Command("run", "Run a named script from tusk.json or a PHP file.\nExamples:\n  tusk run serve\n  tusk run public/index.php -- --flag=value")
         {
             scriptArgument,
             scriptArgsArgument

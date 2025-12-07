@@ -16,7 +16,7 @@ internal static class PhpCommand
             Arity = ArgumentArity.ZeroOrMore
         };
 
-        var command = new Command("php", "Run the resolved PHP binary with the given arguments.")
+        var command = new Command("php", "Run the resolved PHP binary with the given arguments.\nExamples:\n  tusk php -- -v\n  tusk php --php 8.3 -- -r \"echo 'hi';\"")
         {
             phpArgs
         };

@@ -31,6 +31,7 @@ It lets you:
   - [`tusk default`](#tusk-default)
   - [`tusk composer`](#tusk-composer)
   - [`tusk isolate`](#tusk-isolate)
+  - [`tusk completion`](#tusk-completion)
   - [`tusk doctor`](#tusk-doctor)
 - [Data & directories](#data--directories)
 - [License](#license)
@@ -361,6 +362,21 @@ tusk isolate
 ```
 
 After running this once in a project, Tusk will automatically set `PHPRC` and `PHP_INI_SCAN_DIR` to use your local `php.ini` and `conf.d/` when executing PHP/Composer through Tusk, keeping settings and extensions from bleeding across projects.
+
+---
+
+### `tusk completion`
+
+Generate a shell completion script (bash, zsh, fish, PowerShell) that includes commands, tusk.json script names, and PHP versions/aliases from your manifest.
+
+```bash
+tusk completion bash     # bash
+tusk completion zsh      # zsh
+tusk completion fish     # fish
+tusk completion powershell
+```
+
+Tip: `source <(tusk completion bash)` or add to your shell init file.
 
 ---
 

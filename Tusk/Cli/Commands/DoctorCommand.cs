@@ -30,7 +30,7 @@ internal static class DoctorCommand
         {
             Description = "Output machine-readable JSON."
         };
-        var command = new Command("doctor", "Show Tusk environment, paths, and PHP version resolution.")
+        var command = new Command("doctor", "Show Tusk environment, paths, and PHP version resolution.\nExamples:\n  tusk doctor\n  tusk doctor --json")
         {
             jsonOption
         };
