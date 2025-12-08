@@ -30,7 +30,7 @@ internal static class InstallCommand
 
         command.SetAction(async parseResult =>
         {
-            await CommandExecutor.RunAsync(async context =>
+            await CommandExecutor.RunAsync("install", async context =>
             {
                 var versionText = parseResult.GetValue(versionArgument);
                 if (string.IsNullOrWhiteSpace(versionText))

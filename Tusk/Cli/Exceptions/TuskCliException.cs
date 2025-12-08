@@ -2,10 +2,6 @@ using System.Collections.ObjectModel;
 
 namespace Tusk.Cli.Exceptions;
 
-/// <summary>
-/// Represents an error that should be surfaced to the CLI with a friendly message.
-/// Rollback errors can be attached so the global exception handler can report them.
-/// </summary>
 internal sealed class TuskCliException : Exception
 {
     private readonly List<Exception> _rollbackErrors = [];

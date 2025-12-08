@@ -23,7 +23,7 @@ internal static class ListCommand
 
         command.SetAction(async parseResult =>
         {
-            await CommandExecutor.RunAsync(async _ =>
+            await CommandExecutor.RunAsync("list", async _ =>
             {
                 bool asJson = parseResult.GetValue(jsonOption);
                 var versions = await installer.ListInstalledAsync().ConfigureAwait(false);

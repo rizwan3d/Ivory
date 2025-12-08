@@ -24,7 +24,7 @@ internal static class UninstallCommand
 
         command.SetAction(async parseResult =>
         {
-            await CommandExecutor.RunAsync(async context =>
+            await CommandExecutor.RunAsync("uninstall", async context =>
             {
                 var versionText = parseResult.GetValue(versionArgument) ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(versionText))

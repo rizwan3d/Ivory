@@ -4,10 +4,12 @@ using Tusk.Cli.Commands;
 using Tusk.Application.Composer;
 using Tusk.Application.Config;
 using Tusk.Application.Environment;
+using Tusk.Application.Diagnostics;
 using Tusk.Application.Php;
 using Tusk.Application.Scaffolding;
 using Tusk.Domain.Php;
 using Tusk.Infrastructure.Php;
+using Tusk.Cli.Execution;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Tusk.Cli;
@@ -26,6 +28,9 @@ internal static class CommandLineFactory
         var windowsFeed = services.GetRequiredService<WindowsPhpFeed>();
         var projectPhpHomeProvider = services.GetRequiredService<IProjectPhpHomeProvider>();
         var manifest = services.GetRequiredService<PhpVersionsManifest>();
+        var logger = services.GetRequiredService<IAppLogger>();
+        var telemetry = services.GetRequiredService<ITelemetryService>();
+        CommandExecutor.Configure(logger, telemetry);
 
         PhpVersion phpVersion = await resolver.ResolveForCurrentDirectoryAsync().ConfigureAwait(false);
 
@@ -55,6 +60,8 @@ internal static class CommandLineFactory
         rootCommand.Subcommands.Add(DoctorCommand.Create(installer, resolver, phpVersionOption, configProvider, composerService, environmentProbe, projectPhpHomeProvider));
         rootCommand.Subcommands.Add(IsolateCommand.Create(projectPhpHomeProvider));
         rootCommand.Subcommands.Add(CompletionCommand.Create(rootCommand, configProvider, manifest));
+        rootCommand.Subcommands.Add(ScaffoldCiCommand.Create(resolver));
+        rootCommand.Subcommands.Add(ScaffoldDockerCommand.Create(resolver));
 
         return rootCommand;
     }

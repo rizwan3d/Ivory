@@ -8,6 +8,7 @@ using Tusk.Application.Environment;
 using Tusk.Application.Php;
 using Tusk.Application.Runtime;
 using Tusk.Application.Scaffolding;
+using Tusk.Application.Diagnostics;
 using Tusk.Cli;
 using Tusk.Infrastructure.Composer;
 using Tusk.Infrastructure.Config;
@@ -15,6 +16,7 @@ using Tusk.Infrastructure.Environment;
 using Tusk.Infrastructure.Php;
 using Tusk.Infrastructure.Runtime;
 using Tusk.Infrastructure.Scaffolding;
+using Tusk.Infrastructure.Diagnostics;
 
 namespace Tusk;
 
@@ -37,6 +39,7 @@ internal static class Program
             ConfigureServices(builder.Services);
 
             using IHost host = builder.Build();
+            GlobalExceptionHandler.Configure(host.Services.GetRequiredService<IAppLogger>());
 
             RootCommand rootCommand = await CommandLineFactory.CreateAsync(host.Services).ConfigureAwait(false);
 
@@ -77,5 +80,7 @@ internal static class Program
         services.AddSingleton<IEnvironmentProbe, EnvironmentProbe>();
         services.AddSingleton<IPublicIndexScaffolder, PublicIndexScaffolder>();
         services.AddSingleton<IProjectPhpHomeProvider, ProjectPhpHomeProvider>();
+        services.AddSingleton<IAppLogger, AppLogger>();
+        services.AddSingleton<ITelemetryService, TelemetryService>();
     }
 }

@@ -22,7 +22,7 @@ internal static class AvailableCommand
 
         command.SetAction(async parseResult =>
         {
-            await CommandExecutor.RunAsync(async _ =>
+            await CommandExecutor.RunAsync("available", async _ =>
             {
                 bool asJson = parseResult.GetValue(jsonOption);
                 var list = await feed.ListAsync().ConfigureAwait(false);

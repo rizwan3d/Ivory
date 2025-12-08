@@ -2,9 +2,6 @@ using System.Text;
 
 namespace Tusk.Cli.Formatting;
 
-/// <summary>
-/// Centralized console formatting so success/info/error messages look consistent and colorful.
-/// </summary>
 internal static class CliConsole
 {
     private static readonly object _lock = new();

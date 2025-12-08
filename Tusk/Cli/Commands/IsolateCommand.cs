@@ -15,7 +15,7 @@ internal static class IsolateCommand
 
         command.SetAction(async _ =>
         {
-            await CommandExecutor.RunAsync(async _ =>
+            await CommandExecutor.RunAsync("isolate", async _ =>
             {
                 string cwd = Environment.CurrentDirectory;
                 var home = await provider.EnsureCreatedAsync(cwd).ConfigureAwait(false);

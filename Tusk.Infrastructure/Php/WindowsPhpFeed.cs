@@ -1,19 +1,18 @@
 using System.Text.RegularExpressions;
+using System.Text.Json;
 
 namespace Tusk.Infrastructure.Php;
 
-/// <summary>
-/// Fetches available Windows PHP builds from the official sha256sum feed.
-/// Only 64-bit NTS builds are supported.
-/// </summary>
 public sealed class WindowsPhpFeed
 {
-    private static readonly Uri ShaListUri = new("https://windows.php.net/downloads/releases/sha256sum.txt");
+    private static readonly Uri ReleasesUri = new("https://windows.php.net/downloads/releases/releases.json");
+    private static readonly Uri ArchivesUri = new("https://windows.php.net/downloads/releases/archives/");
     private const string DownloadBase = "https://windows.php.net/downloads/releases/";
+    private const string ArchivesBase = "https://windows.php.net/downloads/releases/archives/";
     private const string UserAgent = "tusk-cli/1.0 (+https://github.com/)";
 
     private readonly HttpClient _httpClient;
-    private Dictionary<string, (string File, string Sha)>? _cache;
+    private Dictionary<string, FeedEntry>? _cache;
     private readonly object _lock = new();
 
     public WindowsPhpFeed(HttpClient? httpClient = null)
@@ -42,7 +41,7 @@ public sealed class WindowsPhpFeed
 
         if (_cache.TryGetValue(spec, out var exact))
         {
-            return (true, spec, new PhpArtifact { Url = DownloadBase + exact.File, Sha256 = exact.Sha });
+            return (true, spec, new PhpArtifact { Url = exact.BaseUrl + exact.File, Sha256 = exact.Sha });
         }
 
         var candidates = _cache.Keys
@@ -52,7 +51,7 @@ public sealed class WindowsPhpFeed
 
         if (candidates.Count > 0 && _cache.TryGetValue(candidates[0], out var best))
         {
-            return (true, candidates[0], new PhpArtifact { Url = DownloadBase + best.File, Sha256 = best.Sha });
+            return (true, candidates[0], new PhpArtifact { Url = best.BaseUrl + best.File, Sha256 = best.Sha });
         }
 
         return (false, string.Empty, new PhpArtifact());
@@ -62,40 +61,173 @@ public sealed class WindowsPhpFeed
     {
         if (_cache is not null) return;
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, ShaListUri);
-        request.Headers.UserAgent.ParseAdd(UserAgent);
-        using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        var lines = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var dict = await TryLoadFromReleasesAsync(ct).ConfigureAwait(false)
+                   ?? new Dictionary<string, FeedEntry>(StringComparer.OrdinalIgnoreCase);
+        var archives = await LoadFromArchivesAsync(ct).ConfigureAwait(false);
 
-        if (lines.Contains("empty user agent", StringComparison.OrdinalIgnoreCase))
+        foreach (var archive in archives)
         {
-            throw new InvalidOperationException("windows.php.net rejected the request due to missing User-Agent. Please retry.");
+            if (!dict.ContainsKey(archive.Key))
+            {
+                dict[archive.Key] = archive.Value;
+            }
         }
-        var dict = new Dictionary<string, (string File, string Sha)>(StringComparer.OrdinalIgnoreCase);
 
-        // match 64-bit NTS builds: php-<ver>-nts-Win32-vsXX-x64.zip
-        var regex = new Regex(@"^(?<sha>[a-fA-F0-9]{64})\s+\*php-(?<ver>[\d\.]+)-nts-Win32-(?<vs>vs\d+)-x64\.zip$", RegexOptions.Compiled);
-
-        foreach (var rawLine in lines.Split('\n'))
+        if (dict.Count == 0)
         {
-            var line = rawLine.Trim();
-            if (line.Length == 0) continue;
-
-            var match = regex.Match(line);
-            if (!match.Success) continue;
-
-            var sha = match.Groups["sha"].Value;
-            var ver = match.Groups["ver"].Value;
-            var vs = match.Groups["vs"].Value;
-            var file = $"php-{ver}-nts-Win32-{vs}-x64.zip";
-
-            dict[ver] = (file, sha);
-        }
+            throw new InvalidOperationException("Failed to load PHP releases feed.");
+        }     
 
         lock (_lock)
         {
             _cache ??= dict;
         }
     }
+
+    private async Task<Dictionary<string, FeedEntry>?> TryLoadFromReleasesAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, ReleasesUri);
+            request.Headers.UserAgent.ParseAdd(UserAgent);
+            using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+
+            await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+
+            var dict = new Dictionary<string, FeedEntry>(StringComparer.OrdinalIgnoreCase);
+            foreach (var release in doc.RootElement.EnumerateObject())
+            {
+                if (!release.Value.TryGetProperty("version", out var versionProp))
+                {
+                    continue;
+                }
+
+                var fullVersion = versionProp.GetString();
+                if (string.IsNullOrWhiteSpace(fullVersion))
+                {
+                    continue;
+                }
+
+                var artifact = SelectPreferredArtifact(release.Value);
+                if (artifact is null)
+                {
+                    continue;
+                }
+
+                dict[fullVersion] = artifact.Value with { BaseUrl = DownloadBase };
+            }
+
+            return dict;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static FeedEntry? SelectPreferredArtifact(JsonElement releaseElement)
+    {
+        // Prefer NTS x64 builds with the newest toolset identifiers.
+        string[] preferredKeys =
+        [
+            "nts-vs17-x64",
+            "nts-vs16-x64",
+            "nts-vc15-x64",
+            "nts-vc14-x64",
+            "nts-vs15-x64",
+            "nts-vs14-x64"
+        ];
+
+        foreach (var key in preferredKeys)
+        {
+            if (releaseElement.TryGetProperty(key, out var buildElement))
+            {
+                var artifact = ReadArtifact(buildElement);
+                if (artifact is not null)
+                {
+                    return artifact;
+                }
+            }
+        }
+
+        // Fallback: any NTS x64 build present.
+        foreach (var build in releaseElement.EnumerateObject()
+                     .Where(p => p.Name.Contains("nts", StringComparison.OrdinalIgnoreCase) &&
+                                 p.Name.Contains("x64", StringComparison.OrdinalIgnoreCase)))
+        {
+            var artifact = ReadArtifact(build.Value);
+            if (artifact is not null)
+            {
+                return artifact;
+            }
+        }
+
+        return null;
+    }
+
+    private static FeedEntry? ReadArtifact(JsonElement buildElement)
+    {
+        if (!buildElement.TryGetProperty("zip", out var zipElement))
+        {
+            return null;
+        }
+
+        if (!zipElement.TryGetProperty("path", out var pathProp))
+        {
+            return null;
+        }
+
+        var path = pathProp.GetString();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        string sha = string.Empty;
+        if (zipElement.TryGetProperty("sha256", out var shaProp))
+        {
+            sha = shaProp.GetString() ?? string.Empty;
+        }
+
+        return new FeedEntry(path, sha, DownloadBase);
+    }
+
+    private async Task<Dictionary<string, FeedEntry>> LoadFromArchivesAsync(CancellationToken ct)
+    {
+        var dict = new Dictionary<string, FeedEntry>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, ArchivesUri);
+            request.Headers.UserAgent.ParseAdd(UserAgent);
+            using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+
+            var html = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            var regex = new Regex(@"href=\""/downloads/releases/archives/php-(?<ver>[\d\.]+)-nts-Win32-(?<vs>VC\d+|vs\d+)-x64\.zip\""", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+            var matches = regex.Matches(html);
+            foreach (Match match in matches)
+            {
+                var ver = match.Groups["ver"].Value;
+                var toolset = match.Groups["vs"].Value;
+                if (string.IsNullOrWhiteSpace(ver))
+                {
+                    continue;
+                }
+
+                var file = $"php-{ver}-nts-Win32-{toolset}-x64.zip";
+                dict[ver] = new FeedEntry(file, string.Empty, ArchivesBase);
+            }
+        }
+        catch
+        {
+            // Ignore archive errors; they are a fallback source.
+        }
+
+        return dict;
+    }
+
+    private readonly record struct FeedEntry(string File, string Sha, string BaseUrl);
 }

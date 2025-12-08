@@ -2,9 +2,6 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Tusk.Cli.Execution;
 
-/// <summary>
-/// Tracks rollback actions for a command so we can undo work if something fails.
-/// </summary>
 internal sealed class CommandExecutionContext
 {
     private readonly Stack<Func<Task>> _rollbackActions = new();

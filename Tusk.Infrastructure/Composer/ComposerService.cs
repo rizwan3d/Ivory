@@ -50,13 +50,13 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
         try
         {
             using var client = new HttpClient();
-            using var response = await client.GetAsync(_composerUrl, cancellationToken).ConfigureAwait(false);
+            using var response = await client.GetAsync(_composerUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
-            await using (var fs = File.Create(targetPath))
-            {
-                await response.Content.CopyToAsync(fs, cancellationToken).ConfigureAwait(false);
-            }
+            await using var fs = File.Create(targetPath);
+            var contentLength = response.Content.Headers.ContentLength ?? -1;
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await CopyWithProgressAsync(stream, fs, contentLength, cancellationToken).ConfigureAwait(false);
 
             Console.WriteLine($"[tusk] Saved composer.phar to {targetPath}");
             return targetPath;
@@ -234,5 +234,61 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
             overrideVersionSpec: phpVersionSpec,
             environment: env,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task CopyWithProgressAsync(Stream source, Stream destination, long contentLength, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[81920];
+        long totalRead = 0;
+        int lastPercent = -1;
+        var spinner = new[] { '|', '/', '-', '\\' };
+        int spinIndex = 0;
+        const int barWidth = 28;
+
+        while (true)
+        {
+            int read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read == 0) break;
+
+            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            totalRead += read;
+
+            if (contentLength > 0)
+            {
+                int percent = (int)(totalRead * 100 / contentLength);
+                if (percent != lastPercent)
+                {
+                    lastPercent = percent;
+                    int filled = (int)Math.Min(barWidth, Math.Max(0, percent * barWidth / 100));
+                    string bar = new string('#', filled).PadRight(barWidth, '.');
+                    Console.Write($"\r[tusk] [{bar}] {percent,3}% ({FormatBytes(totalRead)}/{FormatBytes(contentLength)})");
+                }
+            }
+            else
+            {
+                char frame = spinner[spinIndex++ % spinner.Length];
+                Console.Write($"\r[tusk] [{frame}] {FormatBytes(totalRead)} downloaded");
+            }
+        }
+
+        var suffix = contentLength > 0
+            ? $"\r[tusk] [{new string('#', barWidth)}] 100% ({FormatBytes(totalRead)}/{FormatBytes(contentLength)})"
+            : $"\r[tusk] [done] {FormatBytes(totalRead)} downloaded";
+        Console.WriteLine(suffix);
+    }
+
+    private static string FormatBytes(long value)
+    {
+        const long KB = 1024;
+        const long MB = KB * 1024;
+        const long GB = MB * 1024;
+
+        return value switch
+        {
+            >= GB => $"{value / (double)GB:0.0} GB",
+            >= MB => $"{value / (double)MB:0.0} MB",
+            >= KB => $"{value / (double)KB:0.0} KB",
+            _ => $"{value} B"
+        };
     }
 }

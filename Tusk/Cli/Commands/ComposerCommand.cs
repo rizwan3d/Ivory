@@ -25,7 +25,7 @@ internal static class ComposerCommand
 
         command.SetAction(async parseResult =>
         {
-            await CommandExecutor.RunAsync(async _ =>
+            await CommandExecutor.RunAsync("composer", async _ =>
             {
                 string phpVersionSpec = parseResult.GetValue(phpVersionOption) ?? string.Empty;
                 string[] argsToComposer = parseResult.GetValue(composerArgs) ?? [];

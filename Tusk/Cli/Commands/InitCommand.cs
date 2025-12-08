@@ -35,7 +35,7 @@ internal static class InitCommand
 
         command.SetAction(async parseResult =>
         {
-            await CommandExecutor.RunAsync(async context =>
+            await CommandExecutor.RunAsync("init", async context =>
             {
                 FrameworkKind framework = parseResult.GetValue(frameworkOption);
                 if (!Enum.IsDefined(framework))

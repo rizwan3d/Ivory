@@ -28,7 +28,7 @@ internal static class CompletionCommand
 
         command.SetAction(async parseResult =>
         {
-            await CommandExecutor.RunAsync(async _ =>
+            await CommandExecutor.RunAsync("completion", async _ =>
             {
                 var shell = (parseResult.GetValue(shellArgument) ?? string.Empty)
                     .Trim()

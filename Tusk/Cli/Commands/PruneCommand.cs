@@ -29,7 +29,7 @@ internal static class PruneCommand
 
         command.SetAction(async parseResult =>
         {
-            await CommandExecutor.RunAsync(async _ =>
+            await CommandExecutor.RunAsync("prune", async _ =>
             {
                 int keep = parseResult.GetValue(keepOption);
                 bool includeCache = parseResult.GetValue(includeCacheOption);

@@ -23,7 +23,7 @@ internal static class PhpCommand
 
         command.SetAction(async parseResult =>
         {
-            await CommandExecutor.RunAsync(async _ =>
+            await CommandExecutor.RunAsync("php", async _ =>
             {
                 string phpVersionSpec = parseResult.GetValue(phpVersionOption) ?? string.Empty;
                 string[] argsToPhp = parseResult.GetValue(phpArgs) ?? Array.Empty<string>();

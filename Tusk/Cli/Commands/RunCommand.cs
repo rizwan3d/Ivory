@@ -32,7 +32,7 @@ internal static class RunCommand
 
         command.SetAction(async parseResult =>
         {
-            await CommandExecutor.RunAsync(async _ =>
+            await CommandExecutor.RunAsync("run", async _ =>
             {
                 var phpVersionSpec = parseResult.GetValue(phpVersionOption) ?? string.Empty;
                 var scriptOrFile = parseResult.GetValue(scriptArgument) ?? string.Empty;

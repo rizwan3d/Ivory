@@ -15,7 +15,7 @@ internal static class ScriptsCommand
 
         command.SetAction(async _ =>
         {
-            await CommandExecutor.RunAsync(async _ =>
+            await CommandExecutor.RunAsync("scripts", async _ =>
             {
                 var result = await configProvider.LoadAsync(Environment.CurrentDirectory).ConfigureAwait(false);
 

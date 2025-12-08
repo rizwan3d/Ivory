@@ -45,7 +45,6 @@ public sealed class ProjectPhpHomeProvider(IProjectConfigProvider configProvider
             return null;
         }
 
-        // Make sure conf.d exists for scans.
         Directory.CreateDirectory(confDir);
 
         return new ProjectPhpHome(home, iniPath, confDir, configResult.RootDirectory);

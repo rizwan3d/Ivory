@@ -154,6 +154,7 @@ public static class TuskConfigSerializer
             writer.WriteStringValue(arg);
         }
         writer.WriteEndArray();
+
         writer.WriteEndObject();
 
         if (config.Scripts.Count > 0)

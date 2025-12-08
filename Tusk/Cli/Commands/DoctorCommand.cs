@@ -37,7 +37,7 @@ internal static class DoctorCommand
 
         command.SetAction(async parseResult =>
         {
-            await CommandExecutor.RunAsync(async _ =>
+            await CommandExecutor.RunAsync("doctor", async _ =>
             {
                 string cwd = Environment.CurrentDirectory;
                 var platform = PlatformId.DetectCurrent();

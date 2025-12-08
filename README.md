@@ -31,6 +31,8 @@ It lets you:
   - [`tusk default`](#tusk-default)
   - [`tusk composer`](#tusk-composer)
   - [`tusk isolate`](#tusk-isolate)
+  - [`tusk scaffold:ci`](#tusk-scaffoldci)
+  - [`tusk scaffold:docker`](#tusk-scaffolddocker)
   - [`tusk completion`](#tusk-completion)
   - [`tusk doctor`](#tusk-doctor)
 - [Data & directories](#data--directories)
@@ -60,11 +62,11 @@ It lets you:
   - Runs Composer using a specific PHP version
   - Can run Composer scripts through your configured PHP toolchain
 
-- **Nice DX**
-  - Uses `System.CommandLine` for a clean CLI
-  - Uses `tusk doctor` to show what Tusk sees (PHP, Composer, config, etc.)
-  - Scaffolds a basic `public/index.php` that tries to load `vendor/autoload.php`
-  - Optional per-project PHP home (`.tusk/php`) to keep ini/extension overrides local
+  - **Nice DX**
+    - Uses `System.CommandLine` for a clean CLI
+    - Uses `tusk doctor` to show what Tusk sees (PHP, Composer, config, etc.)
+    - Scaffolds a basic `public/index.php` that tries to load `vendor/autoload.php`
+    - Optional per-project PHP home (`.tusk/php`) to keep ini overrides local
 
 ---
 
@@ -82,7 +84,7 @@ It lets you:
 Clone the repo:
 
 ```bash
-git clone https://github.com/your-user/tusk.git
+git clone https://github.com/tusk/tusk.git
 cd tusk
 ````
 
@@ -156,9 +158,9 @@ Tusk looks for a `tusk.json` starting from the current directory and walking up 
 
 * **`php`**
 
-  * `version` (string, optional) – preferred PHP version for this project (e.g. `"8.3"` or `"latest"`).
-  * `ini` (array of string) – extra `-d` INI settings to pass to PHP.
-  * `args` (array of string) – extra arguments always passed to PHP.
+  * `version` (string, optional) - preferred PHP version for this project (e.g. `"8.3"` or `"latest"`).
+  * `ini` (array of string) - extra `-d` INI settings to pass to PHP.
+  * `args` (array of string) - extra arguments always passed to PHP.
 
 * **`scripts`** (object)
 
@@ -362,6 +364,32 @@ tusk isolate
 ```
 
 After running this once in a project, Tusk will automatically set `PHPRC` and `PHP_INI_SCAN_DIR` to use your local `php.ini` and `conf.d/` when executing PHP/Composer through Tusk, keeping settings and extensions from bleeding across projects.
+
+---
+
+### `tusk scaffold:ci`
+
+Generate CI templates wired to Tusk for GitHub Actions or GitLab CI.
+
+```bash
+tusk scaffold:ci              # GitHub by default
+tusk scaffold:ci --target gitlab
+tusk scaffold:ci --target both --force
+```
+
+Creates `.github/workflows/tusk-ci.yml` and/or `.gitlab-ci.yml` running `dotnet build` plus a Tusk doctor + PHP version check.
+
+---
+
+### `tusk scaffold:docker`
+
+Generate a Dockerfile and docker-compose.yml using the resolved PHP version.
+
+```bash
+tusk scaffold:docker
+```
+
+Produces a simple `Dockerfile` (php:<version>-cli) and `docker-compose.yml` exposing port 8000; extend to install needed PHP extensions.
 
 ---
 
