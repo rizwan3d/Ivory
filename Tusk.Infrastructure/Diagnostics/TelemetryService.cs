@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Tusk.Application.Diagnostics;
 using SysEnv = System.Environment;
 
@@ -29,15 +30,15 @@ public sealed class TelemetryService : ITelemetryService
             return Task.CompletedTask;
         }
 
-        var payload = new
-        {
-            ts = DateTimeOffset.UtcNow,
-            command = commandName,
-            success
-        };
+        var payload = new TelemetryRecord(DateTimeOffset.UtcNow, commandName, success);
 
-        var json = JsonSerializer.Serialize(payload);
+        var json = JsonSerializer.Serialize(payload, TelemetryJsonContext.Default.TelemetryRecord);
         File.AppendAllText(_logPath, json + SysEnv.NewLine);
         return Task.CompletedTask;
     }
 }
+
+public record TelemetryRecord(DateTimeOffset ts, string command, bool success);
+
+[JsonSerializable(typeof(TelemetryRecord))]
+internal partial class TelemetryJsonContext : JsonSerializerContext;
