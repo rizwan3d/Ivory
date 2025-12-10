@@ -87,18 +87,30 @@ Downloads come from the latest release at `https://github.com/rizwan3d/Tusk/rele
 
 ```bash
 # Linux (x64)
-bash <(curl -fsSL https://raw.githubusercontent.com/rizwan3d/Tusk/main/install/linux.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/rizwan3d/Tusk/refs/heads/master/install/linux.sh)
 
 # macOS (arm64 or x64)
-bash <(curl -fsSL https://raw.githubusercontent.com/rizwan3d/Tusk/main/install/mac.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/rizwan3d/Tusk/refs/heads/master/install/mac.sh)
 ```
 
 ```powershell
-# Windows (PowerShell 7+; AMD64 or ARM64)
-pwsh -NoLogo -NoProfile -c "irm https://raw.githubusercontent.com/rizwan3d/Tusk/main/install/windows.ps1 | iex"
+# Windows (PowerShell 5+; AMD64 or ARM64)
+powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/rizwan3d/Tusk/refs/heads/master/install/windows.ps1 | iex"
 ```
 
 The installers place `tusk` under a user-scoped bin directory (`~/.tusk/bin` on Unix, `%LOCALAPPDATA%\Tusk\bin` on Windows) and add it to `PATH`.
+
+### Uninstall
+
+```bash
+# Linux/macOS
+bash <(curl -fsSL https://raw.githubusercontent.com/rizwan3d/Tusk/refs/heads/master/install/uninstall.sh)
+```
+
+```powershell
+# Windows (PowerShell 5+)
+powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/rizwan3d/Tusk/refs/heads/master/install/uninstall.ps1 | iex"
+```
 
 ---
 
