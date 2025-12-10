@@ -13,14 +13,11 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
 
     public string? FindComposerConfig(string? configRoot)
     {
-        var searchDirs = new List<string>();
+        var dir = Path.GetFullPath(string.IsNullOrWhiteSpace(configRoot)
+            ? System.Environment.CurrentDirectory
+            : configRoot);
 
-        if (!string.IsNullOrEmpty(configRoot))
-            searchDirs.Add(configRoot);
-
-        searchDirs.Add(System.Environment.CurrentDirectory);
-
-        foreach (var dir in searchDirs.Distinct(StringComparer.OrdinalIgnoreCase))
+        while (!string.IsNullOrWhiteSpace(dir))
         {
             var tuskJson = Path.Combine(dir, "tusk.json");
             if (File.Exists(tuskJson))
@@ -29,6 +26,12 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
             var composerJson = Path.Combine(dir, "composer.json");
             if (File.Exists(composerJson))
                 return composerJson;
+
+            var parent = Directory.GetParent(dir);
+            if (parent is null)
+                break;
+
+            dir = parent.FullName;
         }
 
         return null;
