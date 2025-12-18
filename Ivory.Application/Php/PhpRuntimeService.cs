@@ -60,7 +60,7 @@ public class PhpRuntimeService(
         }
         else
         {
-            phpPath = await _installer.GetInstalledPathAsync(version, cancellationToken).ConfigureAwait(false);
+            phpPath = await EnsureInstalledPhpAsync(version, cancellationToken).ConfigureAwait(false);
         }
 
         var finalArgs = new List<string>();
@@ -133,5 +133,18 @@ public class PhpRuntimeService(
             redirectError: false,
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
-}
 
+    private async Task<string> EnsureInstalledPhpAsync(PhpVersion version, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _installer.GetInstalledPathAsync(version, cancellationToken).ConfigureAwait(false);
+        }
+        catch (System.IO.FileNotFoundException)
+        {
+            Console.WriteLine($"[ivory] PHP {version.Value} is not installed. Installing now...");
+            await _installer.InstallAsync(version, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return await _installer.GetInstalledPathAsync(version, cancellationToken).ConfigureAwait(false);
+        }
+    }
+}

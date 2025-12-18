@@ -46,6 +46,7 @@ It lets you:
   - Installs PHP builds under `~/.ivory/versions/<platform>/<version>`
   - Uses a JSON manifest (`~/.ivory/php-versions.json`) to know where to download PHP from
   - `iv install 8.3` etc.
+  - If a command resolves to a non-system PHP version that isn't installed yet, Ivory will install it automatically before running your command.
 
 - **Project-aware PHP selection**
   - Per-project PHP version via `.ivory.php-version`
