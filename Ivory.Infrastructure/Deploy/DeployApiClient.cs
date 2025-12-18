@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -95,6 +96,67 @@ public sealed class DeployApiClient : IDeployApiClient
                 artifactLocation
             },
             cancellationToken);
+    }
+
+    public async Task<UploadedArtifact> UploadArtifactAsync(
+        DeploySession session,
+        Guid projectId,
+        string version,
+        string archivePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(archivePath) || !File.Exists(archivePath))
+        {
+            throw new FileNotFoundException("Archive not found.", archivePath);
+        }
+
+        var baseUri = BuildBaseUri(session.ApiBaseUrl);
+        var requestUri = new Uri(baseUri, "/cli/artifacts/upload");
+
+        using var content = new MultipartFormDataContent();
+        content.Add(new StringContent(projectId.ToString()), "projectId");
+        content.Add(new StringContent(version), "version");
+
+        await using var stream = File.OpenRead(archivePath);
+        var fileContent = new StreamContent(stream);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        content.Add(fileContent, "file", Path.GetFileName(archivePath));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
+        {
+            Content = content
+        };
+        request.Headers.Add("X-User-Id", session.UserId.ToString());
+
+        using var client = new HttpClient();
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var detail = await SafeReadAsync(response, cancellationToken).ConfigureAwait(false);
+            var message = $"API request failed ({(int)response.StatusCode} {response.ReasonPhrase}).";
+            if (!string.IsNullOrWhiteSpace(detail))
+            {
+                message += $" {detail}";
+            }
+
+            throw new InvalidOperationException(message);
+        }
+
+        if (response.Content is null)
+        {
+            throw new InvalidOperationException("API response was empty.");
+        }
+
+        await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        var result = await JsonSerializer.DeserializeAsync<UploadedArtifact>(responseStream, _jsonOptions, cancellationToken).ConfigureAwait(false);
+
+        if (result is null)
+        {
+            throw new InvalidOperationException("Failed to parse API response.");
+        }
+
+        return result;
     }
 
     public Task<DeploymentLogInfo> GetLogsAsync(DeploySession session, Guid deploymentId, CancellationToken cancellationToken = default)

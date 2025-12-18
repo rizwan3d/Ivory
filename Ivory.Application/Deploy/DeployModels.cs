@@ -120,3 +120,10 @@ public sealed class RollbackResult
 {
     public Guid Id { get; set; }
 }
+
+public sealed class UploadedArtifact
+{
+    public Guid Id { get; set; }
+    public string Version { get; set; } = string.Empty;
+    public string Location { get; set; } = string.Empty;
+}

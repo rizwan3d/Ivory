@@ -17,6 +17,13 @@ public interface IDeployApiClient
         string? artifactLocation,
         CancellationToken cancellationToken = default);
 
+    Task<UploadedArtifact> UploadArtifactAsync(
+        DeploySession session,
+        Guid projectId,
+        string version,
+        string archivePath,
+        CancellationToken cancellationToken = default);
+
     Task<DeploymentLogInfo> GetLogsAsync(DeploySession session, Guid deploymentId, CancellationToken cancellationToken = default);
 
     Task<EnvConfigResult> GetEnvironmentAsync(DeploySession session, Guid projectId, ConfigEnvironment environment, CancellationToken cancellationToken = default);

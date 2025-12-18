@@ -83,18 +83,72 @@ internal static class DeployCommand
                     throw new IvoryCliException("Provide --branch or --commit for the deployment.");
                 }
 
-                var created = await apiClient.CreateDeploymentAsync(
-                    session,
-                    projectId,
-                    env,
-                    string.IsNullOrWhiteSpace(branch) ? null : branch,
-                    string.IsNullOrWhiteSpace(commit) ? null : commit,
-                    string.IsNullOrWhiteSpace(artifact) ? null : artifact).ConfigureAwait(false);
+                string? artifactLocation = string.IsNullOrWhiteSpace(artifact) ? null : artifact;
+                string? tempArchive = null;
 
-                CliConsole.Success($"Deployment {created.Id} created ({created.Environment}, status {created.Status}).");
+                try
+                {
+                    if (artifactLocation is null)
+                    {
+                        CliConsole.Info("Creating deployment package (ignoring .gitignore entries when present)...");
+                        tempArchive = await DeployPackager.CreateArchiveAsync(Directory.GetCurrentDirectory()).ConfigureAwait(false);
+
+                        CliConsole.Info("Uploading artifact to deploy API...");
+                        var uploaded = await apiClient.UploadArtifactAsync(session, projectId, ResolveVersion(branch, commit), tempArchive).ConfigureAwait(false);
+                        artifactLocation = uploaded.Location;
+                        CliConsole.Success($"Uploaded artifact {uploaded.Version}.");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(artifactLocation))
+                    {
+                        throw new IvoryCliException("Failed to determine artifact location for deployment.");
+                    }
+
+                    var created = await apiClient.CreateDeploymentAsync(
+                        session,
+                        projectId,
+                        env,
+                        string.IsNullOrWhiteSpace(branch) ? null : branch,
+                        string.IsNullOrWhiteSpace(commit) ? null : commit,
+                        artifactLocation).ConfigureAwait(false);
+
+                    CliConsole.Success($"Deployment {created.Id} created ({created.Environment}, status {created.Status}).");
+                }
+                finally
+                {
+                    if (!string.IsNullOrWhiteSpace(tempArchive) && File.Exists(tempArchive))
+                    {
+                        try
+                        {
+                            File.Delete(tempArchive);
+                        }
+                        catch (IOException)
+                        {
+                        }
+                        catch (UnauthorizedAccessException)
+                        {
+                            // ignore cleanup failures
+                        }
+                    }
+                }
             }).ConfigureAwait(false);
         });
 
         return command;
+    }
+
+    private static string ResolveVersion(string branch, string commit)
+    {
+        if (!string.IsNullOrWhiteSpace(commit))
+        {
+            return commit;
+        }
+
+        if (!string.IsNullOrWhiteSpace(branch))
+        {
+            return branch;
+        }
+
+        return $"deploy-{DateTime.UtcNow:yyyyMMddHHmmss}";
     }
 }
