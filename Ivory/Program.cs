@@ -10,6 +10,7 @@ using Ivory.Application.Php;
 using Ivory.Application.Runtime;
 using Ivory.Application.Scaffolding;
 using Ivory.Application.Diagnostics;
+using Ivory.Application.Laravel;
 using Ivory.Cli;
 using Ivory.Infrastructure.Composer;
 using Ivory.Infrastructure.Config;
@@ -19,6 +20,7 @@ using Ivory.Infrastructure.Php;
 using Ivory.Infrastructure.Runtime;
 using Ivory.Infrastructure.Scaffolding;
 using Ivory.Infrastructure.Diagnostics;
+using Ivory.Infrastructure.Laravel;
 
 namespace Ivory;
 
@@ -79,6 +81,7 @@ internal static class Program
         services.AddSingleton<IProcessRunner, ProcessExecution>();
         services.AddSingleton<IProjectConfigProvider, ProjectConfigProvider>();
         services.AddSingleton<IComposerService, ComposerService>();
+        services.AddSingleton<ILaravelService, LaravelService>();
         services.AddSingleton<IEnvironmentProbe, EnvironmentProbe>();
         services.AddSingleton<IPublicIndexScaffolder, PublicIndexScaffolder>();
         services.AddSingleton<IProjectPhpHomeProvider, ProjectPhpHomeProvider>();

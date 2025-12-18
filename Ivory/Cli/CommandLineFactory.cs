@@ -8,6 +8,7 @@ using Ivory.Application.Diagnostics;
 using Ivory.Application.Php;
 using Ivory.Application.Scaffolding;
 using Ivory.Application.Deploy;
+using Ivory.Application.Laravel;
 using Ivory.Domain.Php;
 using Ivory.Infrastructure.Php;
 using Ivory.Cli.Execution;
@@ -33,6 +34,7 @@ internal static class CommandLineFactory
         var telemetry = services.GetRequiredService<ITelemetryService>();
         var deployClient = services.GetRequiredService<IDeployApiClient>();
         var deployConfigStore = services.GetRequiredService<IDeployConfigStore>();
+        var laravelService = services.GetRequiredService<ILaravelService>();
         CommandExecutor.Configure(logger, telemetry);
 
         PhpVersion phpVersion = await resolver.ResolveForCurrentDirectoryAsync().ConfigureAwait(false);
@@ -60,6 +62,7 @@ internal static class CommandLineFactory
         rootCommand.Subcommands.Add(PhpCommand.Create(runtime, phpVersionOption));
         rootCommand.Subcommands.Add(InitCommand.Create(resolver, phpVersionOption, publicIndexScaffolder));
         rootCommand.Subcommands.Add(ComposerCommand.Create(composerService, phpVersionOption, configProvider));
+        rootCommand.Subcommands.Add(LaravelCommand.Create(laravelService, phpVersionOption));
         rootCommand.Subcommands.Add(DoctorCommand.Create(installer, resolver, phpVersionOption, configProvider, composerService, environmentProbe, projectPhpHomeProvider));
         rootCommand.Subcommands.Add(IsolateCommand.Create(projectPhpHomeProvider));
         rootCommand.Subcommands.Add(CompletionCommand.Create(rootCommand, configProvider, manifest));
