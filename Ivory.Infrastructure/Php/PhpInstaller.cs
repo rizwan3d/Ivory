@@ -361,9 +361,122 @@ public class PhpInstaller : IPhpInstaller, IDisposable
             {
             }
         }
-        string targetPath = Path.Combine(binDir, phpName);
+
+        string targetRoot = Path.Combine(installDir, phpName);
+        string targetBin = Path.Combine(binDir, phpName);
+
+        LayoutNormalizer.EnsureExecutableShim(existing, targetRoot);
+        LayoutNormalizer.EnsureExecutableShim(existing, targetBin);
+
+        var extDir = Path.Combine(Path.GetDirectoryName(existing)!, "ext");
+        if (Directory.Exists(extDir))
+        {
+            var targetExt = Path.Combine(installDir, "ext");
+            LayoutNormalizer.EnsureExtensionLink(extDir, targetExt);
+        }
 
         await Task.CompletedTask;
+    }
+
+    internal static class LayoutNormalizer
+    {
+        public static void EnsureExecutableShim(string sourcePath, string targetPath)
+        {
+            if (string.IsNullOrWhiteSpace(sourcePath) || string.IsNullOrWhiteSpace(targetPath))
+            {
+                return;
+            }
+
+            try
+            {
+                if (File.Exists(targetPath))
+                {
+                    try
+                    {
+                        File.Delete(targetPath);
+                    }
+                    catch
+                    {
+                        // If deletion fails, fall back to overwrite via copy below.
+                    }
+                }
+
+                if (TryCreateSymlink(targetPath, sourcePath))
+                {
+                    return;
+                }
+
+                File.Copy(sourcePath, targetPath, overwrite: true);
+            }
+            catch
+            {
+                // Best effort shim; failures are non-fatal because GetInstalledPathAsync can still locate the real binary recursively.
+            }
+        }
+
+        public static void EnsureExtensionLink(string sourceDir, string targetDir)
+        {
+            try
+            {
+                if (Directory.Exists(targetDir))
+                {
+                    return;
+                }
+
+                if (TryCreateDirectorySymlink(targetDir, sourceDir))
+                {
+                    return;
+                }
+
+                Directory.CreateDirectory(targetDir);
+            }
+            catch
+            {
+                // Optional; ignore failures.
+            }
+        }
+
+        private static bool TryCreateSymlink(string linkPath, string targetPath)
+        {
+            try
+            {
+                File.CreateSymbolicLink(linkPath, targetPath);
+                return true;
+            }
+            catch (PlatformNotSupportedException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+        }
+
+        private static bool TryCreateDirectorySymlink(string linkPath, string targetPath)
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(linkPath, targetPath);
+                return true;
+            }
+            catch (PlatformNotSupportedException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+        }
     }
 
     private static async Task CopyToWithProgressAsync(Stream source, Stream destination, long contentLength, CancellationToken ct)

@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using System.Text.Json;
+using System.Text.Encodings.Web;
 
 namespace Ivory.Domain.Config;
 
@@ -61,49 +62,30 @@ public static class IvoryConfigSerializer
                 var name = scriptProp.Name;
                 var sElem = scriptProp.Value;
 
-                if (sElem.ValueKind != JsonValueKind.Object)
+                var commands = new List<string>();
+                if (sElem.ValueKind == JsonValueKind.String)
                 {
-                    continue;
+                    commands.Add(sElem.GetString() ?? string.Empty);
                 }
-
-                string? description = null;
-                string phpFile = "";
-                var phpArgsList = new List<string>();
-                var argsList = new List<string>();
-
-                if (sElem.TryGetProperty("description", out var descElem) && descElem.ValueKind == JsonValueKind.String)
+                else if (sElem.ValueKind == JsonValueKind.Array)
                 {
-                    description = descElem.GetString();
-                }
-
-                if (sElem.TryGetProperty("phpFile", out var fileElem) && fileElem.ValueKind == JsonValueKind.String)
-                {
-                    phpFile = fileElem.GetString() ?? "";
-                }
-
-                if (sElem.TryGetProperty("phpArgs", out var phpArgsElem) && phpArgsElem.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var item in phpArgsElem.EnumerateArray().Where(i => i.ValueKind == JsonValueKind.String))
+                    foreach (var item in sElem.EnumerateArray().Where(i => i.ValueKind == JsonValueKind.String))
                     {
-                        phpArgsList.Add(item.GetString()!);
+                        var cmd = item.GetString();
+                        if (!string.IsNullOrWhiteSpace(cmd))
+                        {
+                            commands.Add(cmd);
+                        }
                     }
                 }
 
-                if (sElem.TryGetProperty("args", out var argsElem2) && argsElem2.ValueKind == JsonValueKind.Array)
+                if (commands.Count > 0)
                 {
-                    foreach (var item in argsElem2.EnumerateArray().Where(i => i.ValueKind == JsonValueKind.String))
+                    scripts[name] = new IvoryConfig.IvoryScript
                     {
-                        argsList.Add(item.GetString()!);
-                    }
+                        Commands = commands
+                    };
                 }
-
-                scripts[name] = new IvoryConfig.IvoryScript
-                {
-                    Description = description,
-                    PhpFile = phpFile,
-                    PhpArgs = phpArgsList,
-                    Args = argsList
-                };
             }
         }
 
@@ -119,7 +101,11 @@ public static class IvoryConfigSerializer
     public static string Serialize(IvoryConfig config)
     {
         using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
+        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions
+        {
+            Indented = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        }))
         {
             Write(writer, config);
             writer.Flush();
@@ -157,6 +143,13 @@ public static class IvoryConfigSerializer
 
         writer.WriteEndObject();
 
+        WriteScripts(writer, config);
+
+        writer.WriteEndObject();
+    }
+
+    private static void WriteScripts(Utf8JsonWriter writer, IvoryConfig config)
+    {
         if (config.Scripts.Count > 0)
         {
             writer.WritePropertyName("scripts");
@@ -169,41 +162,21 @@ public static class IvoryConfigSerializer
             writer.WriteEndObject();
         }
 
-        writer.WriteEndObject();
     }
 
     private static void WriteScript(Utf8JsonWriter writer, IvoryConfig.IvoryScript script)
     {
-        writer.WriteStartObject();
-        if (!string.IsNullOrWhiteSpace(script.Description))
+        if (script.Commands.Count == 1)
         {
-            writer.WriteString("description", script.Description);
+            writer.WriteStringValue(script.Commands[0]);
+            return;
         }
 
-        writer.WriteString("phpFile", script.PhpFile);
-
-        if (script.PhpArgs.Count > 0)
+        writer.WriteStartArray();
+        foreach (var cmd in script.Commands)
         {
-            writer.WritePropertyName("phpArgs");
-            writer.WriteStartArray();
-            foreach (var arg in script.PhpArgs)
-            {
-                writer.WriteStringValue(arg);
-            }
-            writer.WriteEndArray();
+            writer.WriteStringValue(cmd);
         }
-
-        if (script.Args.Count > 0)
-        {
-            writer.WritePropertyName("args");
-            writer.WriteStartArray();
-            foreach (var arg in script.Args)
-            {
-                writer.WriteStringValue(arg);
-            }
-            writer.WriteEndArray();
-        }
-        writer.WriteEndObject();
+        writer.WriteEndArray();
     }
 }
-

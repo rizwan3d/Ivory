@@ -15,10 +15,8 @@ public sealed class IvoryConfig
 
     public sealed class IvoryScript
     {
-        public string? Description { get; init; }
-        public string PhpFile { get; init; } = "";
-        public List<string> PhpArgs { get; init; } = [];
-        public List<string> Args { get; init; } = [];
+        // Composer-compatible: value is a string or array of strings.
+        public List<string> Commands { get; init; } = [];
     }
 }
 
@@ -50,19 +48,8 @@ public static class IvoryConfigFactory
             },
             Scripts = new Dictionary<string, IvoryConfig.IvoryScript>(StringComparer.OrdinalIgnoreCase)
             {
-                ["serve"] = new()
-                {
-                    Description = "Run built-in PHP dev server (public/index.php)",
-                    PhpFile = "public/index.php",
-                    PhpArgs = { "-S", "localhost:8000" },
-                    Args = { "--env=dev" }
-                },
-                ["test"] = new()
-                {
-                    Description = "Run PHPUnit tests",
-                    PhpFile = "vendor/bin/phpunit",
-                    Args = { "--colors=always" }
-                }
+                ["serve"] = new() { Commands = { "php -S localhost:8000 public/index.php --env=dev" } },
+                ["test"] = new() { Commands = { "php vendor/bin/phpunit --colors=always" } }
             }
         };
     }
@@ -78,30 +65,10 @@ public static class IvoryConfigFactory
             },
             Scripts = new Dictionary<string, IvoryConfig.IvoryScript>(StringComparer.OrdinalIgnoreCase)
             {
-                ["serve"] = new()
-                {
-                    Description = "Run Laravel development server",
-                    PhpFile = "artisan",
-                    Args = { "serve" }
-                },
-                ["migrate"] = new()
-                {
-                    Description = "Run database migrations",
-                    PhpFile = "artisan",
-                    Args = { "migrate" }
-                },
-                ["tinker"] = new()
-                {
-                    Description = "Open Laravel Tinker REPL",
-                    PhpFile = "artisan",
-                    Args = { "tinker" }
-                },
-                ["queue:work"] = new()
-                {
-                    Description = "Run Laravel queue worker",
-                    PhpFile = "artisan",
-                    Args = { "queue:work" }
-                }
+                ["serve"] = new() { Commands = { "php artisan serve" } },
+                ["migrate"] = new() { Commands = { "php artisan migrate" } },
+                ["tinker"] = new() { Commands = { "php artisan tinker" } },
+                ["queue:work"] = new() { Commands = { "php artisan queue:work" } }
             }
         };
     }
@@ -117,25 +84,10 @@ public static class IvoryConfigFactory
             },
             Scripts = new Dictionary<string, IvoryConfig.IvoryScript>(StringComparer.OrdinalIgnoreCase)
             {
-                ["serve"] = new()
-                {
-                    Description = "Run Symfony dev server using PHP built-in server",
-                    PhpFile = "public/index.php",
-                    PhpArgs = { "-S", "127.0.0.1:8000" }
-                },
-                ["console"] = new()
-                {
-                    Description = "Run bin/console",
-                    PhpFile = "bin/console"
-                },
-                ["migrations:migrate"] = new()
-                {
-                    Description = "Run Doctrine migrations",
-                    PhpFile = "bin/console",
-                    Args = { "doctrine:migrations:migrate" }
-                }
+                ["serve"] = new() { Commands = { "php -S 127.0.0.1:8000 public/index.php" } },
+                ["console"] = new() { Commands = { "php bin/console" } },
+                ["migrations:migrate"] = new() { Commands = { "php bin/console doctrine:migrations:migrate" } }
             }
         };
     }
 }
-

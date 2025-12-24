@@ -1,5 +1,7 @@
 ﻿using System.CommandLine;
 using System.CommandLine.Invocation;
+using System.Text.Json;
+using Ivory.Application.Composer;
 using Ivory.Application.Config;
 using Ivory.Cli.Execution;
 using Ivory.Cli.Formatting;
@@ -9,7 +11,7 @@ namespace Ivory.Cli.Commands;
 
 internal static class ScriptsCommand
 {
-    public static Command Create(IProjectConfigProvider configProvider)
+    public static Command Create(IProjectConfigProvider configProvider, IComposerService composerService)
     {
         var command = new Command("scripts", "List available scripts from ivory.json");
 
@@ -18,54 +20,97 @@ internal static class ScriptsCommand
             await CommandExecutor.RunAsync("scripts", async _ =>
             {
                 var result = await configProvider.LoadAsync(Environment.CurrentDirectory).ConfigureAwait(false);
+                var composerConfig = composerService.FindComposerConfig(result.RootDirectory);
 
-                if (!result.Found)
+                if (composerConfig is null)
                 {
-                    CliConsole.Warning("No ivory.json found in this directory or its parents.");
+                    CliConsole.Warning("No composer.json (or ivory.json) found in this directory or its parents.");
                     return;
                 }
 
-                if (result.Config!.Scripts.Count == 0)
+                var scripts = ComposerScriptsReader.Read(composerConfig);
+                if (scripts.Count == 0)
                 {
-                    CliConsole.Warning($"ivory.json found at {result.RootDirectory}, but no scripts are defined.");
+                    CliConsole.Warning($"composer.json found at {composerConfig}, but no scripts are defined.");
                     return;
                 }
 
-                CliConsole.Info($"Scripts in ivory.json at {result.RootDirectory}:");
+                CliConsole.Info($"Scripts in composer.json at {composerConfig}:");
                 Console.WriteLine();
 
-                int maxNameLen = result.Config.Scripts.Keys.Max(k => k.Length);
+                int maxNameLen = scripts.Keys.Max(k => k.Length);
 
-                foreach (var kvp in result.Config.Scripts.OrderBy(k => k.Key))
+                foreach (var kvp in scripts.OrderBy(k => k.Key))
                 {
                     var name   = kvp.Key;
-                    var script = kvp.Value;
+                    var commands = kvp.Value;
                     string paddedName = name.PadRight(maxNameLen);
 
-                    Console.WriteLine($"  {paddedName}  {script.Description ?? ""}".TrimEnd());
+                    Console.WriteLine($"  {paddedName}");
 
-                    var parts = new List<string> { "php" };
-
-                    foreach (var ini in result.Config.Php.Ini)
+                    if (commands.Count == 0)
                     {
-                        parts.Add("-d");
-                        parts.Add(ini);
+                        Console.WriteLine("             (no commands)");
+                        Console.WriteLine();
+                        continue;
                     }
 
-                    parts.AddRange(result.Config.Php.Args);
-                    parts.AddRange(script.PhpArgs);
-                    parts.Add(script.PhpFile);
-                    if (script.Args.Count > 0)
+                    foreach (var cmd in commands)
                     {
-                        parts.AddRange(script.Args);
+                        Console.WriteLine("             " + cmd);
                     }
-
-                    Console.WriteLine("             " + string.Join(' ', parts));
                     Console.WriteLine();
                 }
             }).ConfigureAwait(false);
         });
         return command;
+    }
+}
+
+internal static class ComposerScriptsReader
+{
+    public static Dictionary<string, List<string>> Read(string composerJsonPath)
+    {
+        var scripts = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(composerJsonPath));
+            if (doc.RootElement.TryGetProperty("scripts", out var scriptsElem) && scriptsElem.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in scriptsElem.EnumerateObject())
+                {
+                    var list = new List<string>();
+                    if (prop.Value.ValueKind == JsonValueKind.String)
+                    {
+                        var v = prop.Value.GetString();
+                        if (!string.IsNullOrWhiteSpace(v))
+                        {
+                            list.Add(v);
+                        }
+                    }
+                    else if (prop.Value.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in prop.Value.EnumerateArray().Where(i => i.ValueKind == JsonValueKind.String))
+                        {
+                            var v = item.GetString();
+                            if (!string.IsNullOrWhiteSpace(v))
+                            {
+                                list.Add(v);
+                            }
+                        }
+                    }
+                    scripts[prop.Name] = list;
+                }
+            }
+        }
+        catch(JsonException e)
+        {
+            throw new InvalidDataException($"Failed to parse composer.json at {composerJsonPath}: {e.Message}", e);
+        }
+
+
+
+        return scripts;
     }
 }
 

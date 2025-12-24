@@ -9,4 +9,5 @@
   <Project Path="Ivory.Application/Ivory.Application.csproj" />
   <Project Path="Ivory.Infrastructure/Ivory.Infrastructure.csproj" />
   <Project Path="Ivory/Ivory.csproj" />
+  <Project Path="Ivory.Infrastructure.Tests/Ivory.Infrastructure.Tests.csproj" />
 </Solution>

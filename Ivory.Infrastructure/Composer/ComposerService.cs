@@ -130,6 +130,8 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
             finalArgs.AddRange(config.Php.Args);
         }
 
+        EnsureComposerExtensions(finalArgs);
+
         finalArgs.Add(composerPhar);
         finalArgs.AddRange(args);
 
@@ -213,6 +215,8 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
             finalArgs.AddRange(config.Php.Args);
         }
 
+        EnsureComposerExtensions(finalArgs);
+
         finalArgs.Add(composerPhar);
         finalArgs.Add("run-script");
         finalArgs.Add(scriptName);
@@ -237,6 +241,26 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
             overrideVersionSpec: phpVersionSpec,
             environment: env,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void EnsureComposerExtensions(List<string> args)
+    {
+        string[] required = ["mbstring", "openssl", "curl", "fileinfo"];
+        foreach (var ext in required)
+        {
+            bool already = args.Any(a =>
+                a.Contains($"extension={ext}", StringComparison.OrdinalIgnoreCase) ||
+                a.Contains($"extension=\"{ext}", StringComparison.OrdinalIgnoreCase) ||
+                a.Contains($"extension=php_{ext}", StringComparison.OrdinalIgnoreCase));
+
+            if (already)
+            {
+                continue;
+            }
+
+            args.Add("-d");
+            args.Add($"extension={ext}");
+        }
     }
 
     private static async Task CopyWithProgressAsync(Stream source, Stream destination, long contentLength, CancellationToken cancellationToken)

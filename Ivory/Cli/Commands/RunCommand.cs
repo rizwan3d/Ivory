@@ -6,16 +6,21 @@ using Ivory.Cli.Execution;
 using Ivory.Cli.Exceptions;
 using Ivory.Cli.Formatting;
 using Ivory.Domain.Config;
+using Ivory.Application.Composer;
 
 namespace Ivory.Cli.Commands;
 
 internal static class RunCommand
 {
-    public static Command Create(IPhpRuntimeService runtime, Option<string> phpVersionOption, IProjectConfigProvider configProvider)
+    public static Command Create(
+        IPhpRuntimeService runtime,
+        Option<string> phpVersionOption,
+        IProjectConfigProvider configProvider,
+        IComposerService composerService)
     {
         var scriptArgument = new Argument<string>("script-or-file")
         {
-            Description = "Script name (from ivory.json) or path to a PHP file."
+            Description = "Composer script name or path to a PHP file."
         };
 
         var scriptArgsArgument = new Argument<string[]>("args")
@@ -24,7 +29,7 @@ internal static class RunCommand
             Arity = ArgumentArity.ZeroOrMore
         };
 
-        var command = new Command("run", "Run a named script from ivory.json or a PHP file.\nExamples:\n  ivory run serve\n  ivory run public/index.php -- --flag=value")
+        var command = new Command("run", "Run a Composer script or a PHP file.\nExamples:\n  ivory run serve\n  ivory run public/index.php -- --flag=value")
         {
             scriptArgument,
             scriptArgsArgument
@@ -45,47 +50,32 @@ internal static class RunCommand
 
                 var configResult = await configProvider.LoadAsync(Environment.CurrentDirectory).ConfigureAwait(false);
 
-                if (configResult.Config is not null &&
-                    configResult.Config.Scripts.TryGetValue(scriptOrFile, out var script))
+                var filePath = scriptOrFile;
+                if (!Path.IsPathRooted(filePath))
                 {
-                    CliConsole.Info($"Running script {scriptOrFile} from ivory.json (php={phpVersionSpec})");
-
-                    var finalArgs = new List<string>();
-
-                    foreach (var ini in configResult.Config.Php.Ini)
-                    {
-                        finalArgs.Add("-d");
-                        finalArgs.Add(ini);
-                    }
-
-                    finalArgs.AddRange(configResult.Config.Php.Args);
-                    finalArgs.AddRange(script.PhpArgs);
-
-                    if (string.IsNullOrWhiteSpace(script.PhpFile))
-                    {
-                        throw new IvoryCliException($"Script '{scriptOrFile}' in ivory.json is missing 'phpFile'.");
-                    }
-
-                    var phpFilePath = configResult.RootDirectory is not null
-                        ? Path.Combine(configResult.RootDirectory, script.PhpFile)
-                        : script.PhpFile;
-
-                    finalArgs.Add(phpFilePath);
-                    finalArgs.AddRange(script.Args);
-                    finalArgs.AddRange(extraArgs);
-
-                    await runtime.RunPhpAsync(null, finalArgs.ToArray(), phpVersionSpec).ConfigureAwait(false);
+                    filePath = Path.Combine(Environment.CurrentDirectory, filePath);
                 }
-                else
-                {
-                    CliConsole.Info($"Running PHP file '{scriptOrFile}' (php={phpVersionSpec})");
-                    var filePath = scriptOrFile;
-                    if (!Path.IsPathRooted(filePath))
-                    {
-                        filePath = Path.Combine(Environment.CurrentDirectory, filePath);
-                    }
 
+                if (File.Exists(filePath))
+                {
+                    CliConsole.Info($"Running PHP file '{filePath}' (php={phpVersionSpec})");
                     await runtime.RunPhpAsync(filePath, extraArgs, phpVersionSpec).ConfigureAwait(false);
+                    return;
+                }
+
+                CliConsole.Info($"Running Composer script '{scriptOrFile}' (php={phpVersionSpec})");
+
+                var exitCode = await composerService.RunComposerScriptAsync(
+                    scriptOrFile,
+                    extraArgs,
+                    phpVersionSpec,
+                    configResult.Config,
+                    configResult.RootDirectory,
+                    CancellationToken.None).ConfigureAwait(false);
+
+                if (exitCode != 0)
+                {
+                    throw new IvoryCliException($"Script '{scriptOrFile}' failed with exit code {exitCode}.");
                 }
             }).ConfigureAwait(false);
         });
@@ -93,4 +83,3 @@ internal static class RunCommand
         return command;
     }
 }
-
