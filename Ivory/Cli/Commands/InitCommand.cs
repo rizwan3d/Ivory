@@ -118,7 +118,11 @@ internal static class InitCommand
         var root = composerDoc.RootElement;
 
         using var stream = new MemoryStream();
-        using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+        using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions
+        {
+            Indented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        });
         writer.WriteStartObject();
 
         bool hasExtra = false;

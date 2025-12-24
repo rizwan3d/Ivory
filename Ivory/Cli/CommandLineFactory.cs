@@ -12,6 +12,7 @@ using Ivory.Application.Laravel;
 using Ivory.Domain.Php;
 using Ivory.Infrastructure.Php;
 using Ivory.Cli.Execution;
+using Ivory.Application.Runtime;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Ivory.Cli;
@@ -50,8 +51,8 @@ internal static class CommandLineFactory
         var rootCommand = new RootCommand("Ivory - PHP runtime and version manager for PHP.\nExamples:\n  ivory install 8.3\n  ivory run serve\n  ivory composer install\n  ivory doctor");
         rootCommand.Options.Add(phpVersionOption);
 
-        rootCommand.Subcommands.Add(RunCommand.Create(runtime, phpVersionOption, configProvider));
-        rootCommand.Subcommands.Add(ScriptsCommand.Create(configProvider));
+        rootCommand.Subcommands.Add(RunCommand.Create(runtime, phpVersionOption, configProvider, composerService));
+        rootCommand.Subcommands.Add(ScriptsCommand.Create(configProvider, composerService));
         rootCommand.Subcommands.Add(ListCommand.Create(installer));
         rootCommand.Subcommands.Add(InstallCommand.Create(installer));
         rootCommand.Subcommands.Add(UninstallCommand.Create(installer));
