@@ -8,4 +8,7 @@
     <ProjectReference Include="..\Ivory.Application\Ivory.Application.csproj" />
     <ProjectReference Include="..\Ivory.Domain\Ivory.Domain.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+  </ItemGroup>
 </Project>

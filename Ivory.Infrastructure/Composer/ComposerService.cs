@@ -1,15 +1,22 @@
-﻿using System.Diagnostics;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
+using System.Net.Http;
 using Ivory.Application.Composer;
 using Ivory.Application.Php;
 using Ivory.Domain.Config;
+using Ivory.Infrastructure.Http;
 
 namespace Ivory.Infrastructure.Composer;
 
-public class ComposerService(IPhpRuntimeService runtime) : IComposerService
+public class ComposerService(IPhpRuntimeService runtime, IHttpClientFactory httpClientFactory) : IComposerService
 {
-    private const string _composerUrl = "https://github.com/composer/composer/releases/latest/download/composer.phar";
+    private const string ComposerUrl = "https://github.com/composer/composer/releases/latest/download/composer.phar";
     private readonly IPhpRuntimeService _runtime = runtime;
+    private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
 
     public string? FindComposerConfig(string? configRoot)
     {
@@ -48,12 +55,12 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
         if (File.Exists(targetPath))
             return targetPath;
 
-        Console.WriteLine($"[ivory] Downloading composer.phar from {_composerUrl} ...");
+        Console.WriteLine($"[ivory] Downloading composer.phar from {ComposerUrl} ...");
 
         try
         {
-            using var client = new HttpClient();
-            using var response = await client.GetAsync(_composerUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            using var client = _httpClientFactory.CreateClient(HttpClientNames.Default);
+            using var response = await client.GetAsync(ComposerUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
             await using var fs = File.Create(targetPath);
@@ -130,22 +137,20 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
             finalArgs.AddRange(config.Php.Args);
         }
 
-        EnsureComposerExtensions(finalArgs);
-
         finalArgs.Add(composerPhar);
         finalArgs.AddRange(args);
 
         var composerConfigPath = FindComposerConfig(configRoot);
-        Dictionary<string, string?>? env = new(StringComparer.OrdinalIgnoreCase);
+        var env = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["IVORY_COMPOSER_PHAR"] = composerPhar,
+            ["IVORY_ENABLE_DEFAULT_EXTENSIONS"] = "1"
+        };
+
         if (composerConfigPath is not null)
         {
-            env.Add("COMPOSER", composerConfigPath);
-            env.Add("IVORY_COMPOSER_PHAR", composerPhar);
+            env["COMPOSER"] = composerConfigPath;
             Console.WriteLine($"[ivory] Using COMPOSER={composerConfigPath}");
-        }
-        else
-        {
-            env.Add("IVORY_COMPOSER_PHAR", composerPhar);
         }
 
         return await _runtime.RunPhpAsync(
@@ -189,8 +194,7 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
 
             if (!root.TryGetProperty("scripts", out var scriptsElem) ||
                 scriptsElem.ValueKind != JsonValueKind.Object ||
-                !scriptsElem.EnumerateObject()
-                            .Any(p => string.Equals(p.Name, scriptName, StringComparison.OrdinalIgnoreCase)))
+                !scriptsElem.EnumerateObject().Any(p => string.Equals(p.Name, scriptName, StringComparison.OrdinalIgnoreCase)))
             {
                 Console.Error.WriteLine($"[ivory] Composer script '{scriptName}' not found in {composerConfigPath}.");
                 return 1;
@@ -215,8 +219,6 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
             finalArgs.AddRange(config.Php.Args);
         }
 
-        EnsureComposerExtensions(finalArgs);
-
         finalArgs.Add(composerPhar);
         finalArgs.Add("run-script");
         finalArgs.Add(scriptName);
@@ -229,7 +231,9 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
 
         var env = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
-            ["COMPOSER"] = composerConfigPath
+            ["COMPOSER"] = composerConfigPath,
+            ["IVORY_COMPOSER_PHAR"] = composerPhar,
+            ["IVORY_ENABLE_DEFAULT_EXTENSIONS"] = "1"
         };
 
         Console.WriteLine($"[ivory] Running Composer script '{scriptName}' (php={phpVersionSpec})");
@@ -241,26 +245,6 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
             overrideVersionSpec: phpVersionSpec,
             environment: env,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-    }
-
-    private static void EnsureComposerExtensions(List<string> args)
-    {
-        string[] required = ["mbstring", "openssl", "curl", "fileinfo"];
-        foreach (var ext in required)
-        {
-            bool already = args.Any(a =>
-                a.Contains($"extension={ext}", StringComparison.OrdinalIgnoreCase) ||
-                a.Contains($"extension=\"{ext}", StringComparison.OrdinalIgnoreCase) ||
-                a.Contains($"extension=php_{ext}", StringComparison.OrdinalIgnoreCase));
-
-            if (already)
-            {
-                continue;
-            }
-
-            args.Add("-d");
-            args.Add($"extension={ext}");
-        }
     }
 
     private static async Task CopyWithProgressAsync(Stream source, Stream destination, long contentLength, CancellationToken cancellationToken)
@@ -319,4 +303,3 @@ public class ComposerService(IPhpRuntimeService runtime) : IComposerService
         };
     }
 }
-

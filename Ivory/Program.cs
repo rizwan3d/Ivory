@@ -1,26 +1,28 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using System.CommandLine;
-using System.Diagnostics.CodeAnalysis;
-using Ivory.Application.Composer;
+﻿using Ivory.Application.Composer;
 using Ivory.Application.Config;
 using Ivory.Application.Deploy;
+using Ivory.Application.Diagnostics;
 using Ivory.Application.Environment;
+using Ivory.Application.Laravel;
 using Ivory.Application.Php;
 using Ivory.Application.Runtime;
 using Ivory.Application.Scaffolding;
-using Ivory.Application.Diagnostics;
-using Ivory.Application.Laravel;
 using Ivory.Cli;
 using Ivory.Infrastructure.Composer;
 using Ivory.Infrastructure.Config;
 using Ivory.Infrastructure.Deploy;
+using Ivory.Infrastructure.Diagnostics;
 using Ivory.Infrastructure.Environment;
+using Ivory.Infrastructure.Http;
+using Ivory.Infrastructure.Laravel;
 using Ivory.Infrastructure.Php;
 using Ivory.Infrastructure.Runtime;
 using Ivory.Infrastructure.Scaffolding;
-using Ivory.Infrastructure.Diagnostics;
-using Ivory.Infrastructure.Laravel;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using System.CommandLine;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Ivory;
 
@@ -40,10 +42,15 @@ internal static class Program
         try
         {
             var builder = Host.CreateApplicationBuilder(args);
+            builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.None);
+            builder.Logging.AddFilter("System.Net.Http.SocketsHttpHandler", LogLevel.None);
+            builder.Logging.AddFilter("Microsoft.Extensions.Http.DefaultHttpClientFactory", LogLevel.None);
             ConfigureServices(builder.Services);
 
             using IHost host = builder.Build();
             GlobalExceptionHandler.Configure(host.Services.GetRequiredService<IAppLogger>());
+
+            
 
             RootCommand rootCommand = await CommandLineFactory.CreateAsync(host.Services).ConfigureAwait(false);
 
@@ -89,5 +96,14 @@ internal static class Program
         services.AddSingleton<ITelemetryService, TelemetryService>();
         services.AddSingleton<IDeployApiClient, DeployApiClient>();
         services.AddSingleton<IDeployConfigStore, DeployConfigStore>();
+
+        services.AddHttpClient(HttpClientNames.Default, client =>
+        {
+            client.Timeout = TimeSpan.FromMinutes(5);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("ivory-cli/1.0 (+https://github.com/)");
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            UseCookies = false
+        });
     }
 }

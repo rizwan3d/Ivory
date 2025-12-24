@@ -1,15 +1,15 @@
-﻿using System.CommandLine;
-using System.CommandLine.Invocation;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using Ivory.Application.Composer;
+﻿using Ivory.Application.Composer;
 using Ivory.Application.Php;
 using Ivory.Application.Scaffolding;
-using Ivory.Cli.Execution;
 using Ivory.Cli.Exceptions;
+using Ivory.Cli.Execution;
 using Ivory.Cli.Formatting;
 using Ivory.Cli.Helpers;
 using Ivory.Domain.Config;
+using System.CommandLine;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Ivory.Cli.Commands;
 
@@ -56,7 +56,8 @@ internal static class InitCommand
                 string composerPath = Path.Combine(cwd, "composer.json");
                 string composerLockPath = Path.Combine(cwd, "composer.lock");
                 string publicIndexPath = Path.Combine(cwd, "public", "index.php");
-                bool composerExists = File.Exists(composerPath);
+                bool composerWasPresent = File.Exists(composerPath);
+                bool composerCreated = false;
 
                 if (File.Exists(ivoryPath) && !force)
                 {
@@ -93,7 +94,7 @@ internal static class InitCommand
 
                 string phpVersionSpec = parseResult.GetValue(phpVersionOption) ?? string.Empty;
                 var detectedVersion = await VersionHelpers.DetectPhpVersionFromPhpVAsync(resolver, phpVersionSpec).ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(detectedVersion) && composerExists)
+                if (string.IsNullOrWhiteSpace(detectedVersion) && composerWasPresent)
                 {
                     detectedVersion = TryReadPhpVersionFromComposer(composerPath);
                 }
@@ -102,9 +103,12 @@ internal static class InitCommand
                     config.Php.Version = detectedVersion;
                 }
 
-                if (!composerExists)
+                if (!composerWasPresent)
                 {
                     await EnsureComposerJsonAsync(composerService, cwd, config.Php.Version ?? string.Empty).ConfigureAwait(false);
+                    composerCreated = true;
+                    RegisterFileRollback(composerPath, context);
+                    RegisterFileRollback(composerLockPath, context);
                 }
 
                 string ivoryJson = File.Exists(composerPath)
@@ -120,8 +124,18 @@ internal static class InitCommand
 
                 publicIndexScaffolder.EnsureDefaultPublicIndex(cwd);
 
-                File.Delete(composerPath);
-                File.Delete(composerLockPath);
+                if (composerCreated)
+                {
+                    if (File.Exists(composerPath))
+                    {
+                        File.Delete(composerPath);
+                    }
+
+                    if (File.Exists(composerLockPath))
+                    {
+                        File.Delete(composerLockPath);
+                    }
+                }
 
                 CliConsole.Success($"Created ivory.json for framework '{framework}' in {cwd}");
             }).ConfigureAwait(false);
@@ -132,7 +146,27 @@ internal static class InitCommand
 
     private static async Task<string> CreateIvoryJsonFromComposerAsync(IvoryConfig config, IComposerService composerService, string cwd)
     {
-        var json = IvoryConfigSerialization.SerializeIvoryConfig(config);
+
+        using var composerDoc = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(cwd, "composer.json")).ConfigureAwait(false));
+        var root = composerDoc.RootElement;
+
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions
+        {
+            Indented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        });
+        writer.WriteStartObject();
+
+        foreach (var prop in root.EnumerateObject())
+        {
+           
+            writer.WritePropertyName(prop.Name);
+            prop.Value.WriteTo(writer);
+        }
+    
+        writer.WriteEndObject();
+        await writer.FlushAsync().ConfigureAwait(false);
 
         // If composer.json exists, install dependencies via Composer after writing ivory.json.
         var exit = await composerService.RunComposerAsync(
@@ -146,7 +180,7 @@ internal static class InitCommand
             Console.WriteLine("[ivory] Composer install failed; ivory.json still generated.");
         }
 
-        return json;
+        return Encoding.UTF8.GetString(stream.ToArray()); ;
     }
 
     private static async Task EnsureComposerJsonAsync(IComposerService composerService, string cwd, string phpVersionSpec)
@@ -172,6 +206,7 @@ internal static class InitCommand
 
     private static string? TryReadPhpVersionFromComposer(string composerPath)
     {
+#pragma warning disable CA1031 // Do not catch general exception types
         try
         {
             using var composerDoc = JsonDocument.Parse(File.ReadAllText(composerPath));
@@ -207,6 +242,7 @@ internal static class InitCommand
         {
             // Best-effort composer fallback.
         }
+#pragma warning restore CA1031 // Do not catch general exception types
 
         return null;
     }

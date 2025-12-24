@@ -1,14 +1,23 @@
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Ivory.Application.Deploy;
+using Ivory.Infrastructure.Http;
 
 namespace Ivory.Infrastructure.Deploy;
 
 public sealed class DeployApiClient : IDeployApiClient
 {
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public DeployApiClient(IHttpClientFactory httpClientFactory)
+    {
+        _httpClientFactory = httpClientFactory;
+    }
+
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -128,7 +137,7 @@ public sealed class DeployApiClient : IDeployApiClient
         };
         request.Headers.Add("X-User-Id", session.UserId.ToString());
 
-        using var client = new HttpClient();
+        using var client = _httpClientFactory.CreateClient(HttpClientNames.Deploy);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
@@ -261,7 +270,7 @@ public sealed class DeployApiClient : IDeployApiClient
             request.Content = JsonContent.Create(payload, options: opts);
         }
 
-        using var client = new HttpClient();
+        using var client = _httpClientFactory.CreateClient(HttpClientNames.Deploy);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)

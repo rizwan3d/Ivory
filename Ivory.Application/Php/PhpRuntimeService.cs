@@ -70,6 +70,7 @@ public class PhpRuntimeService(
         }
 
         var iniOverride = ResolveIniOverride(phpPath);
+        var defaultScanDir = GetDefaultScanDir(phpPath);
         string? extensionDirForIni = null;
         try
         {
@@ -121,7 +122,15 @@ public class PhpRuntimeService(
             .TryGetExistingAsync(System.Environment.CurrentDirectory, cancellationToken)
             .ConfigureAwait(false);
 
-        var extensionDirectives = GetExtensionDirectives(configResult.Config, extensionDirForIni, enableDefaultExtensions);
+        bool canInspectExisting = !string.IsNullOrWhiteSpace(iniOverride) || !string.IsNullOrWhiteSpace(defaultScanDir);
+        var existingExtensions = canInspectExisting
+            ? ReadConfiguredExtensions(iniOverride, defaultScanDir)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var extensionDirectives = GetExtensionDirectives(
+            configResult.Config,
+            extensionDirForIni,
+            enableDefaultExtensions && canInspectExisting,
+            existingExtensions);
 
         if (projectHome is not null)
         {
@@ -314,7 +323,7 @@ public class PhpRuntimeService(
         }
     }
 
-    private static IReadOnlyList<string> GetExtensionDirectives(IvoryConfig? config, string? extensionDir, bool enableDefaults)
+    private static IReadOnlyList<string> GetExtensionDirectives(IvoryConfig? config, string? extensionDir, bool enableDefaults, HashSet<string> existingExtensions)
     {
         IEnumerable<string> configured = Enumerable.Empty<string>();
         if (config?.Php is not null && config.Php.Ini.Count > 0)
@@ -346,7 +355,14 @@ public class PhpRuntimeService(
             "extension=fileinfo",
         };
 
-        return FilterExistingExtensions(defaults, extensionDir);
+        var filteredDefaults = defaults
+            .Where(d =>
+            {
+                var name = ExtractExtensionName(d);
+                return string.IsNullOrWhiteSpace(name) || !existingExtensions.Contains(name);
+            });
+
+        return FilterExistingExtensions(filteredDefaults, extensionDir);
     }
 
     private static IReadOnlyList<string> FilterExistingExtensions(IEnumerable<string> directives, string? extensionDir)
@@ -414,6 +430,113 @@ public class PhpRuntimeService(
         catch
         {
             // Best-effort; failing to write extension list should not crash the CLI.
+        }
+    }
+
+    private static HashSet<string> ReadConfiguredExtensions(string? iniPath, string? scanDir)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(iniPath) && File.Exists(iniPath))
+            {
+                foreach (var line in File.ReadLines(iniPath))
+                {
+                    var name = ExtractExtensionName(line);
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        set.Add(name);
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(scanDir) && Directory.Exists(scanDir))
+            {
+                foreach (var file in Directory.EnumerateFiles(scanDir, "*.ini", SearchOption.TopDirectoryOnly))
+                {
+                    var fname = Path.GetFileName(file);
+                    if (fname is "20-ivory-extensions.ini" or "99-ivory-extension-dir.ini")
+                    {
+                        continue;
+                    }
+
+                    foreach (var line in File.ReadLines(file))
+                    {
+                        var name = ExtractExtensionName(line);
+                        if (!string.IsNullOrWhiteSpace(name))
+                        {
+                            set.Add(name);
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return set;
+    }
+
+    private static string ExtractExtensionName(string? directive)
+    {
+        if (string.IsNullOrWhiteSpace(directive))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = directive.Trim();
+        if (!trimmed.StartsWith("extension", StringComparison.OrdinalIgnoreCase) &&
+            !trimmed.StartsWith("zend_extension", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        var parts = trimmed.Split('=', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 2)
+        {
+            return string.Empty;
+        }
+
+        var value = parts[1].Trim().Trim('"', '\'');
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var basename = Path.GetFileName(value);
+        var withoutExt = Path.GetFileNameWithoutExtension(basename);
+        if (withoutExt.StartsWith("php_", StringComparison.OrdinalIgnoreCase))
+        {
+            withoutExt = withoutExt["php_".Length..];
+        }
+
+        return withoutExt;
+    }
+
+    private static string? GetDefaultScanDir(string phpPath)
+    {
+        try
+        {
+            var phpDir = Path.GetDirectoryName(phpPath);
+            if (string.IsNullOrWhiteSpace(phpDir))
+            {
+                return null;
+            }
+
+            var scanDir = Path.Combine(phpDir, "conf.d");
+            Directory.CreateDirectory(scanDir);
+            return scanDir;
+        }
+        catch
+        {
+            return null;
         }
     }
 }

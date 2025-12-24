@@ -29,7 +29,15 @@ internal static class PhpCommand
                 string[] argsToPhp = parseResult.GetValue(phpArgs) ?? Array.Empty<string>();
                 CliConsole.Info($"php (version={phpVersionSpec}) {string.Join(' ', argsToPhp)}");
                 int exitCode = await runtime.RunPhpAsync(null, argsToPhp, phpVersionSpec).ConfigureAwait(false);
-                CliConsole.Success($"PHP exited with code {exitCode}.");
+
+                if (exitCode == 0)
+                {
+                    CliConsole.Success($"PHP exited with code {exitCode}.");
+                }
+                else
+                {
+                    CliConsole.Error($"PHP exited with code {exitCode}.");
+                }
             }).ConfigureAwait(false);
         });
 

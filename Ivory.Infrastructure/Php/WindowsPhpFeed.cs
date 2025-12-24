@@ -1,5 +1,8 @@
-﻿using System.Text.RegularExpressions;
+using System.Net.Http;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Linq;
+using Ivory.Infrastructure.Http;
 
 namespace Ivory.Infrastructure.Php;
 
@@ -11,14 +14,13 @@ public sealed class WindowsPhpFeed
     private const string ArchivesBase = "https://windows.php.net/downloads/releases/archives/";
     private const string UserAgent = "ivory-cli/1.0 (+https://github.com/)";
 
-    private readonly HttpClient _httpClient;
+    private readonly IHttpClientFactory _httpClientFactory;
     private Dictionary<string, FeedEntry>? _cache;
     private readonly object _lock = new();
 
-    public WindowsPhpFeed(HttpClient? httpClient = null)
+    public WindowsPhpFeed(IHttpClientFactory httpClientFactory)
     {
-        _httpClient = httpClient ?? new HttpClient();
-        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
+        _httpClientFactory = httpClientFactory;
     }
 
     public async Task<IReadOnlyList<(string Version, string File, string Sha)>> ListAsync(CancellationToken ct = default)
@@ -76,7 +78,7 @@ public sealed class WindowsPhpFeed
         if (dict.Count == 0)
         {
             throw new InvalidOperationException("Failed to load PHP releases feed.");
-        }     
+        }
 
         lock (_lock)
         {
@@ -90,7 +92,8 @@ public sealed class WindowsPhpFeed
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, ReleasesUri);
             request.Headers.UserAgent.ParseAdd(UserAgent);
-            using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+            using var client = _httpClientFactory.CreateClient(HttpClientNames.Default);
+            using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
             await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -129,7 +132,6 @@ public sealed class WindowsPhpFeed
 
     private static FeedEntry? SelectPreferredArtifact(JsonElement releaseElement)
     {
-        // Prefer NTS x64 builds with the newest toolset identifiers.
         string[] preferredKeys =
         [
             "nts-vs17-x64",
@@ -152,7 +154,6 @@ public sealed class WindowsPhpFeed
             }
         }
 
-        // Fallback: any NTS x64 build present.
         foreach (var build in releaseElement.EnumerateObject()
                      .Where(p => p.Name.Contains("nts", StringComparison.OrdinalIgnoreCase) &&
                                  p.Name.Contains("x64", StringComparison.OrdinalIgnoreCase)))
@@ -202,7 +203,8 @@ public sealed class WindowsPhpFeed
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, ArchivesUri);
             request.Headers.UserAgent.ParseAdd(UserAgent);
-            using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+            using var client = _httpClientFactory.CreateClient(HttpClientNames.Default);
+            using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
             var html = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
@@ -223,7 +225,6 @@ public sealed class WindowsPhpFeed
         }
         catch
         {
-            // Ignore archive errors; they are a fallback source.
         }
 
         return dict;
@@ -231,4 +232,3 @@ public sealed class WindowsPhpFeed
 
     private readonly record struct FeedEntry(string File, string Sha, string BaseUrl);
 }
-

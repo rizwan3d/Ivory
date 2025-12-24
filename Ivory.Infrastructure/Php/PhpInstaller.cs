@@ -6,6 +6,8 @@ using Ivory.Application.Php;
 using Ivory.Domain.Php;
 using Ivory.Domain.Runtime;
 using System.Linq;
+using System.Net.Http;
+using Ivory.Infrastructure.Http;
 
 namespace Ivory.Infrastructure.Php;
 
@@ -21,7 +23,7 @@ public class PhpInstaller : IPhpInstaller, IDisposable
     private readonly HttpClient _httpClient;
     private bool _disposed;
 
-    public PhpInstaller(PhpVersionsManifest manifest, WindowsPhpFeed windowsFeed, HttpClient? httpClient = null)
+    public PhpInstaller(PhpVersionsManifest manifest, WindowsPhpFeed windowsFeed, IHttpClientFactory httpClientFactory)
     {
         _manifest = manifest;
         _windowsFeed = windowsFeed;
@@ -36,8 +38,7 @@ public class PhpInstaller : IPhpInstaller, IDisposable
         Directory.CreateDirectory(_versionsRoot);
         Directory.CreateDirectory(_cacheRoot);
 
-        _httpClient = httpClient ?? new HttpClient();
-        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
+        _httpClient = httpClientFactory.CreateClient(HttpClientNames.Default);
     }
 
     public async Task InstallAsync(PhpVersion versionSpec, bool ignoreChecksum = false, CancellationToken cancellationToken = default)
@@ -257,8 +258,12 @@ public class PhpInstaller : IPhpInstaller, IDisposable
     {
         public static VersionPartComparer Instance { get; } = new();
 
-        public int Compare(IReadOnlyList<int> x, IReadOnlyList<int> y)
+        public int Compare(IReadOnlyList<int>? x, IReadOnlyList<int>? y)
         {
+            if (ReferenceEquals(x, y)) return 0;
+            if (x is null) return -1;
+            if (y is null) return 1;
+
             int max = Math.Max(x.Count, y.Count);
             for (int i = 0; i < max; i++)
             {
@@ -456,24 +461,12 @@ public class PhpInstaller : IPhpInstaller, IDisposable
 
             try
             {
-                if (File.Exists(targetPath))
+                if(OperatingSystem.IsWindows())
                 {
-                    try
-                    {
-                        File.Delete(targetPath);
-                    }
-                    catch
-                    {
-                        // If deletion fails, fall back to overwrite via copy below.
-                    }
-                }
-
-                if (TryCreateSymlink(targetPath, sourcePath))
-                {
+                    File.Copy(sourcePath, targetPath, overwrite: false);
                     return;
                 }
-
-                File.Copy(sourcePath, targetPath, overwrite: true);
+                TryCreateSymlink(targetPath, sourcePath);
             }
             catch
             {
@@ -606,7 +599,6 @@ public class PhpInstaller : IPhpInstaller, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        _httpClient.Dispose();
     }
 }
 

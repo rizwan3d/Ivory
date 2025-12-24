@@ -1,14 +1,17 @@
+using System.Net.Http;
 using Ivory.Application.Composer;
 using Ivory.Application.Laravel;
 using Ivory.Application.Php;
+using Ivory.Infrastructure.Http;
 
 namespace Ivory.Infrastructure.Laravel;
 
-public class LaravelService(IPhpRuntimeService runtime, IComposerService composerService) : ILaravelService
+public class LaravelService(IPhpRuntimeService runtime, IComposerService composerService, IHttpClientFactory httpClientFactory) : ILaravelService
 {
     private const string DownloadUrl = "https://download.herdphp.com/resources/laravel";
     private readonly IPhpRuntimeService _runtime = runtime;
     private readonly IComposerService _composerService = composerService;
+    private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
 
     public async Task<int> RunLaravelAsync(string[] args, string phpVersionSpec, CancellationToken cancellationToken = default)
     {
@@ -40,7 +43,7 @@ public class LaravelService(IPhpRuntimeService runtime, IComposerService compose
         return await _runtime.RunPhpAsync(laravelPath, forwardedArgs, phpVersionSpec, env, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<string> EnsureLaravelAsync(CancellationToken cancellationToken)
+    private async Task<string> EnsureLaravelAsync(CancellationToken cancellationToken)
     {
         var home = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
         string ivoryDir = Path.Combine(home, ".ivory");
@@ -54,16 +57,33 @@ public class LaravelService(IPhpRuntimeService runtime, IComposerService compose
 
         Console.WriteLine($"[ivory] Downloading Laravel installer from {DownloadUrl} ...");
 
-        using var client = new HttpClient();
-        using var response = await client.GetAsync(DownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-
-        await using (var destination = File.Create(targetPath))
-        await using (var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
+        string tempPath = Path.Combine(ivoryDir, "laravel.tmp");
+        if (File.Exists(tempPath))
         {
-            await stream.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+            File.Delete(tempPath);
         }
 
+        using (var response = await _httpClientFactory
+                       .CreateClient(HttpClientNames.Default)
+                       .GetAsync(DownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                       .ConfigureAwait(false))
+        {
+            response.EnsureSuccessStatusCode();
+
+            await using var destination = File.Create(tempPath);
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await stream.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+            await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var info = new FileInfo(tempPath);
+        if (info.Length == 0)
+        {
+            File.Delete(tempPath);
+            throw new InvalidOperationException("Downloaded Laravel installer is empty.");
+        }
+
+        File.Move(tempPath, targetPath, overwrite: true);
         Console.WriteLine($"[ivory] Saved Laravel installer to {targetPath}");
 
         return targetPath;
