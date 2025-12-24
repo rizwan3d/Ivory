@@ -30,7 +30,10 @@ public class LaravelService(IPhpRuntimeService runtime, IComposerService compose
             return 1;
         }
 
-        var env = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var env = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["IVORY_ENABLE_DEFAULT_EXTENSIONS"] = "1"
+        };
         TryEnsureComposerShim(composerPhar, env);
 
         string[] forwardedArgs = args ?? Array.Empty<string>();

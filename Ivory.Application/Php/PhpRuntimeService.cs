@@ -1,5 +1,7 @@
-﻿using Ivory.Application.Runtime;
+﻿using Ivory.Application.Config;
+using Ivory.Application.Runtime;
 using Ivory.Domain.Php;
+using Ivory.Domain.Config;
 
 namespace Ivory.Application.Php;
 
@@ -7,12 +9,14 @@ public class PhpRuntimeService(
     IPhpInstaller installer,
     IPhpVersionResolver resolver,
     IProcessRunner processRunner,
-    IProjectPhpHomeProvider projectPhpHomeProvider) : IPhpRuntimeService
+    IProjectPhpHomeProvider projectPhpHomeProvider,
+    IProjectConfigProvider configProvider) : IPhpRuntimeService
 {
     private readonly IPhpInstaller _installer = installer;
     private readonly IPhpVersionResolver _resolver = resolver;
     private readonly IProcessRunner _processRunner = processRunner;
     private readonly IProjectPhpHomeProvider _projectPhpHomeProvider = projectPhpHomeProvider;
+    private readonly IProjectConfigProvider _configProvider = configProvider;
 
     public Task<int> RunPhpAsync(
         string? scriptOrCommand,
@@ -52,6 +56,8 @@ public class PhpRuntimeService(
         {
             version = await _resolver.ResolveForCurrentDirectoryAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        var configResult = await _configProvider.LoadAsync(System.Environment.CurrentDirectory, cancellationToken).ConfigureAwait(false);
 
         string phpPath;
         if (string.Equals(version.Value, "system", StringComparison.OrdinalIgnoreCase))
@@ -106,9 +112,16 @@ public class PhpRuntimeService(
         env["IVORY_PHP"] = phpPath;
         ConfigurePhpEnvironment(phpPath, env);
 
+        bool enableDefaultExtensions = env.TryGetValue("IVORY_ENABLE_DEFAULT_EXTENSIONS", out var flag)
+            && !string.IsNullOrWhiteSpace(flag)
+            && !string.Equals(flag, "0", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(flag, "false", StringComparison.OrdinalIgnoreCase);
+
         var projectHome = await _projectPhpHomeProvider
             .TryGetExistingAsync(System.Environment.CurrentDirectory, cancellationToken)
             .ConfigureAwait(false);
+
+        var extensionDirectives = GetExtensionDirectives(configResult.Config, extensionDirForIni, enableDefaultExtensions);
 
         if (projectHome is not null)
         {
@@ -124,10 +137,16 @@ public class PhpRuntimeService(
             {
                 WriteExtensionDirIni(projectHome.ExtensionsPath, extensionDirForIni);
             }
+
+            WriteExtensionsIni(projectHome.ExtensionsPath, extensionDirectives);
         }
         else
         {
             env.TryAdd("IVORY_PROJECT_ROOT", System.Environment.CurrentDirectory);
+            if (env.TryGetValue("PHP_INI_SCAN_DIR", out var scanDir) && !string.IsNullOrWhiteSpace(scanDir))
+            {
+                WriteExtensionsIni(scanDir!, extensionDirectives);
+            }
         }
 
         string workingDir = System.Environment.CurrentDirectory;
@@ -292,6 +311,109 @@ public class PhpRuntimeService(
         catch
         {
             // Ignore failures; main process still adds -d extension_dir when possible.
+        }
+    }
+
+    private static IReadOnlyList<string> GetExtensionDirectives(IvoryConfig? config, string? extensionDir, bool enableDefaults)
+    {
+        IEnumerable<string> configured = Enumerable.Empty<string>();
+        if (config?.Php is not null && config.Php.Ini.Count > 0)
+        {
+            configured = config.Php.Ini
+                .Where(i => !string.IsNullOrWhiteSpace(i))
+                .Where(i =>
+                    i.TrimStart().StartsWith("extension", StringComparison.OrdinalIgnoreCase) ||
+                    i.TrimStart().StartsWith("zend_extension", StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (configured.Any())
+        {
+            return FilterExistingExtensions(configured, extensionDir);
+        }
+
+        if (!enableDefaults)
+        {
+            return Array.Empty<string>();
+        }
+
+        // Default to a minimal set required by Composer/Laravel if enabled.
+        var defaults = new[]
+        {
+            "extension=curl",
+            "extension=openssl",
+            "extension=mbstring",
+            "extension=sodium",
+            "extension=fileinfo",
+        };
+
+        return FilterExistingExtensions(defaults, extensionDir);
+    }
+
+    private static IReadOnlyList<string> FilterExistingExtensions(IEnumerable<string> directives, string? extensionDir)
+    {
+        if (string.IsNullOrWhiteSpace(extensionDir) || !Directory.Exists(extensionDir))
+        {
+            return directives.ToArray();
+        }
+
+        var list = new List<string>();
+        foreach (var directive in directives)
+        {
+            if (!directive.TrimStart().StartsWith("extension", StringComparison.OrdinalIgnoreCase))
+            {
+                list.Add(directive);
+                continue;
+            }
+
+            var parts = directive.Split('=', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length != 2)
+            {
+                list.Add(directive);
+                continue;
+            }
+
+            var name = parts[1];
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            bool exists = OperatingSystem.IsWindows()
+                ? File.Exists(Path.Combine(extensionDir, name)) ||
+                  File.Exists(Path.Combine(extensionDir, $"php_{name}.dll")) ||
+                  File.Exists(Path.Combine(extensionDir, $"{name}.dll"))
+                : File.Exists(Path.Combine(extensionDir, name)) ||
+                  File.Exists(Path.Combine(extensionDir, $"php_{name}.so")) ||
+                  File.Exists(Path.Combine(extensionDir, $"{name}.so"));
+
+            if (exists)
+            {
+                list.Add($"extension={name}");
+            }
+        }
+
+        return list;
+    }
+
+    private static void WriteExtensionsIni(string scanDir, IReadOnlyList<string> directives)
+    {
+        if (!Directory.Exists(scanDir) || directives.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var iniPath = Path.Combine(scanDir, "20-ivory-extensions.ini");
+            var content = string.Join(System.Environment.NewLine, directives) + System.Environment.NewLine;
+            if (!File.Exists(iniPath) || File.ReadAllText(iniPath) != content)
+            {
+                File.WriteAllText(iniPath, content);
+            }
+        }
+        catch
+        {
+            // Best-effort; failing to write extension list should not crash the CLI.
         }
     }
 }
