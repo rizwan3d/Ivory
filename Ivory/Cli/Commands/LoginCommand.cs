@@ -15,9 +15,9 @@ internal static class LoginCommand
             Description = "Base URL of the Ivory deploy API (e.g. http://localhost:5000)."
         };
 
-        var userIdOption = new Option<string>("--user-id")
+        var userEmailOption = new Option<string>("--user-email")
         {
-            Description = "User id (GUID) to authenticate as."
+            Description = "User email to authenticate as."
         };
 
         var nameOption = new Option<string>("--name")
@@ -29,7 +29,7 @@ internal static class LoginCommand
         var command = new Command("login", "Authenticate Ivory CLI against the deploy API and store settings locally.")
         {
             apiUrlOption,
-            userIdOption,
+            userEmailOption,
             nameOption
         };
 
@@ -38,21 +38,21 @@ internal static class LoginCommand
             await CommandExecutor.RunAsync("login", async _ =>
             {
                 var apiBase = parseResult.GetValue(apiUrlOption);
-                var userId = parseResult.GetValue(userIdOption);
+                var userEmail = parseResult.GetValue(userEmailOption);
                 var tokenName = parseResult.GetValue(nameOption);
 
-                var session = await DeploySessionResolver.ResolveAsync(configStore, apiBase, userId).ConfigureAwait(false);
+                var session = await DeploySessionResolver.ResolveAsync(configStore, apiBase, userEmail).ConfigureAwait(false);
                 var login = await apiClient.LoginAsync(session, tokenName).ConfigureAwait(false);
 
                 var config = await configStore.LoadAsync().ConfigureAwait(false);
                 config.ApiBaseUrl = session.ApiBaseUrl;
-                config.UserId = session.UserId;
+                config.UserEmail = session.UserEmail;
                 config.LastTokenId = login.Id;
                 config.LastTokenPrefix = login.Prefix;
                 config.LastTokenSecret = login.Secret;
                 await configStore.SaveAsync(config).ConfigureAwait(false);
 
-                CliConsole.Success($"Authenticated against {session.ApiBaseUrl} as user {session.UserId}.");
+                CliConsole.Success($"Authenticated against {session.ApiBaseUrl} as user {session.UserEmail}.");
                 CliConsole.Info($"Token prefix: {login.Prefix}");
                 CliConsole.Warning("Token secret (store securely): " + login.Secret);
             }).ConfigureAwait(false);

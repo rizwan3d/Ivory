@@ -4,16 +4,23 @@ using Ivory.Cli.Deploy;
 using Ivory.Cli.Execution;
 using Ivory.Cli.Exceptions;
 using Ivory.Cli.Formatting;
+using Ivory.Cli.Helpers;
+using Ivory.Application.Config;
 
 namespace Ivory.Cli.Commands;
 
 internal static class DeployCommand
 {
-    public static Command Create(IDeployApiClient apiClient, IDeployConfigStore configStore)
+    public static Command Create(IDeployApiClient apiClient, IDeployConfigStore configStore, IProjectConfigProvider configProvider)
     {
-        var projectOption = new Option<Guid>("--project-id")
+        var orgOption = new Option<string>("--org")
         {
-            Description = "Target project id."
+            Description = "Target org name."
+        };
+
+        var projectOption = new Option<string>("--project")
+        {
+            Description = "Target project name."
         };
 
         var environmentOption = new Option<DeploymentEnvironment>("--env")
@@ -42,20 +49,21 @@ internal static class DeployCommand
             Description = "Override API base URL for this command."
         };
 
-        var userIdOption = new Option<string>("--user-id")
+        var userEmailOption = new Option<string>("--user-email")
         {
-            Description = "Override user id for this command."
+            Description = "Override user email for this command."
         };
 
         var command = new Command("deploy", "Create a deployment for a project.")
         {
+            orgOption,
             projectOption,
             environmentOption,
             branchOption,
             commitOption,
             artifactOption,
             apiUrlOption,
-            userIdOption
+            userEmailOption
         };
 
         command.SetAction(async parseResult =>
@@ -65,13 +73,12 @@ internal static class DeployCommand
                 var session = await DeploySessionResolver.ResolveAsync(
                     configStore,
                     parseResult.GetValue(apiUrlOption),
-                    parseResult.GetValue(userIdOption)).ConfigureAwait(false);
+                    parseResult.GetValue(userEmailOption)).ConfigureAwait(false);
 
-                var projectId = parseResult.GetValue(projectOption);
-                if (projectId == Guid.Empty)
-                {
-                    throw new IvoryCliException("Project id is required.");
-                }
+                var (orgName, projectName) = await ProjectIdentityResolver.ResolveAsync(
+                    configProvider,
+                    parseResult.GetValue(orgOption),
+                    parseResult.GetValue(projectOption)).ConfigureAwait(false);
 
                 var env = parseResult.GetValue(environmentOption);
                 var branch = (parseResult.GetValue(branchOption) ?? string.Empty).Trim();
@@ -94,7 +101,7 @@ internal static class DeployCommand
                         tempArchive = await DeployPackager.CreateArchiveAsync(Directory.GetCurrentDirectory()).ConfigureAwait(false);
 
                         CliConsole.Info("Uploading artifact to deploy API...");
-                        var uploaded = await apiClient.UploadArtifactAsync(session, projectId, ResolveVersion(branch, commit), tempArchive).ConfigureAwait(false);
+                        var uploaded = await apiClient.UploadArtifactAsync(session, orgName, projectName, ResolveVersion(branch, commit), tempArchive).ConfigureAwait(false);
                         artifactLocation = uploaded.Location;
                         CliConsole.Success($"Uploaded artifact {uploaded.Version}.");
                     }
@@ -106,13 +113,14 @@ internal static class DeployCommand
 
                     var created = await apiClient.CreateDeploymentAsync(
                         session,
-                        projectId,
+                        orgName,
+                        projectName,
                         env,
                         string.IsNullOrWhiteSpace(branch) ? null : branch,
                         string.IsNullOrWhiteSpace(commit) ? null : commit,
                         artifactLocation).ConfigureAwait(false);
 
-                    CliConsole.Success($"Deployment {created.Id} created ({created.Environment}, status {created.Status}).");
+                    CliConsole.Success($"Deployment {created.Id} created for {orgName}/{projectName} ({created.Environment}, status {created.Status}).");
                 }
                 finally
                 {

@@ -16,7 +16,7 @@ internal static class OrgsCommand
         {
             await CommandExecutor.RunAsync("orgs:list", async _ =>
             {
-                var session = await DeploySessionResolver.ResolveAsync(configStore, parseResult.GetValue(CommonOptions.ApiUrl), parseResult.GetValue(CommonOptions.UserId)).ConfigureAwait(false);
+                var session = await DeploySessionResolver.ResolveAsync(configStore, parseResult.GetValue(CommonOptions.ApiUrl), parseResult.GetValue(CommonOptions.UserEmail)).ConfigureAwait(false);
                 var orgs = await apiClient.GetOrgsAsync(session).ConfigureAwait(false);
                 if (orgs.Count == 0)
                 {
@@ -26,7 +26,7 @@ internal static class OrgsCommand
 
                 foreach (var org in orgs)
                 {
-                    Console.WriteLine($"- {org.OrgName} ({org.OrgId}) role={org.Role}");
+                    Console.WriteLine($"- {org.OrgName} role={org.Role}");
                 }
             }).ConfigureAwait(false);
         });
@@ -49,7 +49,7 @@ internal static class OrgsCommand
                     throw new IvoryCliException("Org name is required.");
                 }
 
-                var session = await DeploySessionResolver.ResolveAsync(configStore, parseResult.GetValue(CommonOptions.ApiUrl), parseResult.GetValue(CommonOptions.UserId)).ConfigureAwait(false);
+                var session = await DeploySessionResolver.ResolveAsync(configStore, parseResult.GetValue(CommonOptions.ApiUrl), parseResult.GetValue(CommonOptions.UserEmail)).ConfigureAwait(false);
                 var org = await apiClient.CreateOrgAsync(session, name).ConfigureAwait(false);
                 CliConsole.Success($"Org created: {org.OrgName} ({org.OrgId})");
             }).ConfigureAwait(false);
@@ -57,7 +57,7 @@ internal static class OrgsCommand
 
         var command = new Command("orgs", "Manage orgs.");
         command.Options.Add(CommonOptions.ApiUrl);
-        command.Options.Add(CommonOptions.UserId);
+        command.Options.Add(CommonOptions.UserEmail);
         command.Subcommands.Add(list);
         command.Subcommands.Add(create);
         return command;
@@ -71,14 +71,14 @@ internal static class CommonOptions
         Description = "Override API base URL."
     };
 
-    public static readonly Option<string> UserId = new("--user-id")
+    public static readonly Option<string> UserEmail = new("--user-email")
     {
-        Description = "Override user id."
+        Description = "Override user email."
     };
 
     static CommonOptions()
     {
         ApiUrl.Recursive = true;
-        UserId.Recursive = true;
+        UserEmail.Recursive = true;
     }
 }

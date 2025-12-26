@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using Ivory.Application.Config;
@@ -8,6 +9,7 @@ using Ivory.Cli.Execution;
 using Ivory.Cli.Exceptions;
 using Ivory.Cli.Formatting;
 using Ivory.Domain.Config;
+using System.Buffers;
 
 namespace Ivory.Cli.Commands;
 
@@ -17,9 +19,14 @@ internal static class ConfigCommand
 
     public static Command Create(IDeployApiClient apiClient, IDeployConfigStore configStore, IProjectConfigProvider configProvider)
     {
-        var projectOption = new Option<Guid>("--project-id")
+        var orgOption = new Option<string>("--org")
         {
-            Description = "Project id to sync configuration to."
+            Description = "Org name to sync configuration to."
+        };
+
+        var projectOption = new Option<string>("--project")
+        {
+            Description = "Project name to sync configuration to."
         };
 
         var envOption = new Option<ConfigEnvironment>("--env")
@@ -30,6 +37,7 @@ internal static class ConfigCommand
 
         var sync = new Command("sync", "Push ivory.json settings to the deploy API.")
         {
+            orgOption,
             projectOption,
             envOption
         };
@@ -38,13 +46,10 @@ internal static class ConfigCommand
         {
             await CommandExecutor.RunAsync("config:sync", async _ =>
             {
-                var session = await DeploySessionResolver.ResolveAsync(configStore, parseResult.GetValue(CommonOptions.ApiUrl), parseResult.GetValue(CommonOptions.UserId)).ConfigureAwait(false);
+                var session = await DeploySessionResolver.ResolveAsync(configStore, parseResult.GetValue(CommonOptions.ApiUrl), parseResult.GetValue(CommonOptions.UserEmail)).ConfigureAwait(false);
 
-                var projectId = parseResult.GetValue(projectOption);
-                if (projectId == Guid.Empty)
-                {
-                    throw new IvoryCliException("Project id is required.");
-                }
+                var orgName = (parseResult.GetValue(orgOption) ?? string.Empty).Trim();
+                var projectName = (parseResult.GetValue(projectOption) ?? string.Empty).Trim();
 
                 var env = parseResult.GetValue(envOption);
 
@@ -54,22 +59,179 @@ internal static class ConfigCommand
                     throw new IvoryCliException("No ivory.json found. Run this command inside a project with ivory.json.");
                 }
 
+                if (string.IsNullOrWhiteSpace(orgName))
+                {
+                    orgName = projectConfig.Config.Org ?? string.Empty;
+                }
+
+                if (string.IsNullOrWhiteSpace(projectName))
+                {
+                    projectName = projectConfig.Config.Project ?? string.Empty;
+                }
+
+                if (string.IsNullOrWhiteSpace(orgName) || string.IsNullOrWhiteSpace(projectName))
+                {
+                    throw new IvoryCliException($"Org and project names are required. Set them via --org/--project or in {Path.Combine(projectConfig.RootDirectory, "ivory.json")}.");
+                }
+
                 var request = BuildRequest(projectConfig.Config, projectConfig.RootDirectory);
 
-                await apiClient.UpsertConfigAsync(session, projectId, env, request).ConfigureAwait(false);
+                await apiClient.UpsertConfigAsync(session, orgName, projectName, env, request).ConfigureAwait(false);
 
-                CliConsole.Success($"Synced ivory.json to project {projectId} ({env}).");
+                CliConsole.Success($"Synced ivory.json to project {orgName}/{projectName} ({env}).");
                 Console.WriteLine($"PHP: {request.PhpVersion}");
                 Console.WriteLine($"Extensions: {request.RequiredExtensionsCsv}");
                 Console.WriteLine($"php.ini: {request.PhpIniOverridesJson}");
             }).ConfigureAwait(false);
         });
 
+        var target = new Command("target", "Set org/project in ivory.json for deploy commands.")
+        {
+            orgOption,
+            projectOption
+        };
+
+        target.SetAction(async parseResult =>
+        {
+            await CommandExecutor.RunAsync("config:target", async _ =>
+            {
+                var orgName = (parseResult.GetValue(orgOption) ?? string.Empty).Trim();
+                var projectName = (parseResult.GetValue(projectOption) ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(orgName) || string.IsNullOrWhiteSpace(projectName))
+                {
+                    throw new IvoryCliException("Org and project are required. Provide --org and --project.");
+                }
+
+                var configResult = await configProvider.LoadAsync(Environment.CurrentDirectory).ConfigureAwait(false);
+                if (!configResult.Found || configResult.RootDirectory is null)
+                {
+                    throw new IvoryCliException("No ivory.json found. Run inside a project that has ivory.json.");
+                }
+
+                var path = Path.Combine(configResult.RootDirectory, "ivory.json");
+                var original = await File.ReadAllTextAsync(path).ConfigureAwait(false);
+                string json;
+                try
+                {
+                    using var doc = JsonDocument.Parse(original);
+                    json = WriteOrgProjectPatched(doc.RootElement, orgName, projectName);
+                }
+                catch (JsonException)
+                {
+                    throw new IvoryCliException($"Failed to parse {path}; fix the file or recreate it with 'ivory init --force'.");
+                }
+
+                await File.WriteAllTextAsync(path, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)).ConfigureAwait(false);
+                CliConsole.Success($"Updated org/project in {path} -> {orgName}/{projectName}.");
+            }).ConfigureAwait(false);
+        });
+
         var command = new Command("config", "Manage deploy configuration.");
         command.Options.Add(CommonOptions.ApiUrl);
-        command.Options.Add(CommonOptions.UserId);
+        command.Options.Add(CommonOptions.UserEmail);
         command.Subcommands.Add(sync);
+        command.Subcommands.Add(target);
         return command;
+    }
+
+    private static string WriteOrgProjectPatched(JsonElement root, string org, string project)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
+        {
+            writer.WriteStartObject();
+
+            var hasOrg = false;
+            var hasProject = false;
+
+            foreach (var prop in root.EnumerateObject())
+            {
+                if (prop.NameEquals("org"))
+                {
+                    writer.WriteString("org", org);
+                    hasOrg = true;
+                    continue;
+                }
+
+                if (prop.NameEquals("project"))
+                {
+                    writer.WriteString("project", project);
+                    hasProject = true;
+                    continue;
+                }
+
+                writer.WritePropertyName(prop.Name);
+                WriteElement(writer, prop.Value);
+            }
+
+            if (!hasOrg)
+            {
+                writer.WriteString("org", org);
+            }
+
+            if (!hasProject)
+            {
+                writer.WriteString("project", project);
+            }
+
+            writer.WriteEndObject();
+            writer.Flush();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteElement(Utf8JsonWriter writer, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var prop in element.EnumerateObject())
+                {
+                    writer.WritePropertyName(prop.Name);
+                    WriteElement(writer, prop.Value);
+                }
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray())
+                {
+                    WriteElement(writer, item);
+                }
+                writer.WriteEndArray();
+                break;
+            case JsonValueKind.String:
+                writer.WriteStringValue(element.GetString());
+                break;
+            case JsonValueKind.Number:
+                if (element.TryGetInt64(out var l))
+                {
+                    writer.WriteNumberValue(l);
+                }
+                else if (element.TryGetDouble(out var d))
+                {
+                    writer.WriteNumberValue(d);
+                }
+                else
+                {
+                    writer.WriteRawValue(element.GetRawText());
+                }
+                break;
+            case JsonValueKind.True:
+                writer.WriteBooleanValue(true);
+                break;
+            case JsonValueKind.False:
+                writer.WriteBooleanValue(false);
+                break;
+            case JsonValueKind.Null:
+                writer.WriteNullValue();
+                break;
+            default:
+                writer.WriteRawValue(element.GetRawText());
+                break;
+        }
     }
 
     private static ConfigUpsertRequest BuildRequest(IvoryConfig config, string rootDirectory)

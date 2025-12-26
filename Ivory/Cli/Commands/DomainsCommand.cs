@@ -4,16 +4,23 @@ using Ivory.Cli.Deploy;
 using Ivory.Cli.Execution;
 using Ivory.Cli.Exceptions;
 using Ivory.Cli.Formatting;
+using Ivory.Cli.Helpers;
+using Ivory.Application.Config;
 
 namespace Ivory.Cli.Commands;
 
 internal static class DomainsCommand
 {
-    public static Command Create(IDeployApiClient apiClient, IDeployConfigStore configStore)
+    public static Command Create(IDeployApiClient apiClient, IDeployConfigStore configStore, IProjectConfigProvider configProvider)
     {
-        var projectOption = new Option<Guid>("--project-id")
+        var orgOption = new Option<string>("--org")
         {
-            Description = "Project id to list domains for."
+            Description = "Org name to list domains for."
+        };
+
+        var projectOption = new Option<string>("--project")
+        {
+            Description = "Project name to list domains for."
         };
 
         var apiUrlOption = new Option<string>("--api-url")
@@ -21,16 +28,17 @@ internal static class DomainsCommand
             Description = "Override API base URL for this command."
         };
 
-        var userIdOption = new Option<string>("--user-id")
+        var userEmailOption = new Option<string>("--user-email")
         {
-            Description = "Override user id for this command."
+            Description = "Override user email for this command."
         };
 
         var command = new Command("domains", "List domains bound to a project.")
         {
+            orgOption,
             projectOption,
             apiUrlOption,
-            userIdOption
+            userEmailOption
         };
 
         command.SetAction(async parseResult =>
@@ -40,15 +48,14 @@ internal static class DomainsCommand
                 var session = await DeploySessionResolver.ResolveAsync(
                     configStore,
                     parseResult.GetValue(apiUrlOption),
-                    parseResult.GetValue(userIdOption)).ConfigureAwait(false);
+                    parseResult.GetValue(userEmailOption)).ConfigureAwait(false);
 
-                var projectId = parseResult.GetValue(projectOption);
-                if (projectId == Guid.Empty)
-                {
-                    throw new IvoryCliException("Project id is required.");
-                }
+                var (orgName, projectName) = await ProjectIdentityResolver.ResolveAsync(
+                    configProvider,
+                    parseResult.GetValue(orgOption),
+                    parseResult.GetValue(projectOption)).ConfigureAwait(false);
 
-                var domains = await apiClient.GetDomainsAsync(session, projectId).ConfigureAwait(false);
+                var domains = await apiClient.GetDomainsAsync(session, orgName, projectName).ConfigureAwait(false);
 
                 if (domains.Count == 0)
                 {
@@ -56,7 +63,7 @@ internal static class DomainsCommand
                     return;
                 }
 
-                CliConsole.Success($"Domains for project {projectId}:");
+                CliConsole.Success($"Domains for project {orgName}/{projectName}:");
                 foreach (var domain in domains)
                 {
                     var flags = new List<string>();

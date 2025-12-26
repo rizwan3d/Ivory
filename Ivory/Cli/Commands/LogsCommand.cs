@@ -21,16 +21,16 @@ internal static class LogsCommand
             Description = "Override API base URL for this command."
         };
 
-        var userIdOption = new Option<string>("--user-id")
+        var userEmailOption = new Option<string>("--user-email")
         {
-            Description = "Override user id for this command."
+            Description = "Override user email for this command."
         };
 
         var command = new Command("logs", "Fetch deployment status and log URL.")
         {
             deploymentOption,
             apiUrlOption,
-            userIdOption
+            userEmailOption
         };
 
         command.SetAction(async parseResult =>
@@ -40,7 +40,7 @@ internal static class LogsCommand
                 var session = await DeploySessionResolver.ResolveAsync(
                     configStore,
                     parseResult.GetValue(apiUrlOption),
-                    parseResult.GetValue(userIdOption)).ConfigureAwait(false);
+                    parseResult.GetValue(userEmailOption)).ConfigureAwait(false);
 
                 var deploymentId = parseResult.GetValue(deploymentOption);
                 if (deploymentId == Guid.Empty)

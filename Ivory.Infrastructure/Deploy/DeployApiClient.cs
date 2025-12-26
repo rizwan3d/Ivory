@@ -63,42 +63,47 @@ public sealed class DeployApiClient : IDeployApiClient
             cancellationToken);
     }
 
-    public Task<IReadOnlyList<ProjectSummary>> GetProjectsAsync(DeploySession session, Guid orgId, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<ProjectSummary>> GetProjectsAsync(DeploySession session, string orgName, CancellationToken cancellationToken = default)
     {
+        var org = EnsureOrg(orgName);
         return SendAsync<IReadOnlyList<ProjectSummary>>(
             session,
             HttpMethod.Get,
-            $"/orgs/{orgId}/projects",
+            $"/orgs/{Segment(org)}/projects",
             null,
             cancellationToken);
     }
 
-    public Task<ProjectSummary> CreateProjectAsync(DeploySession session, Guid orgId, string name, CancellationToken cancellationToken = default)
+    public Task<ProjectSummary> CreateProjectAsync(DeploySession session, string orgName, string name, CancellationToken cancellationToken = default)
     {
+        var org = EnsureOrg(orgName);
         return SendAsync<ProjectSummary>(
             session,
             HttpMethod.Post,
-            $"/orgs/{orgId}/projects",
+            $"/orgs/{Segment(org)}/projects",
             new { name },
             cancellationToken);
     }
 
     public Task<DeploymentCreated> CreateDeploymentAsync(
         DeploySession session,
-        Guid projectId,
+        string orgName,
+        string projectName,
         DeploymentEnvironment environment,
         string? branch,
         string? commitSha,
         string? artifactLocation,
         CancellationToken cancellationToken = default)
     {
+        var (org, project) = EnsureNames(orgName, projectName);
         return SendAsync<DeploymentCreated>(
             session,
             HttpMethod.Post,
             "/cli/deploy",
             new
             {
-                projectId,
+                orgName = org,
+                projectName = project,
                 environment,
                 branch,
                 commitSha,
@@ -109,7 +114,8 @@ public sealed class DeployApiClient : IDeployApiClient
 
     public async Task<UploadedArtifact> UploadArtifactAsync(
         DeploySession session,
-        Guid projectId,
+        string orgName,
+        string projectName,
         string version,
         string archivePath,
         CancellationToken cancellationToken = default)
@@ -119,11 +125,13 @@ public sealed class DeployApiClient : IDeployApiClient
             throw new FileNotFoundException("Archive not found.", archivePath);
         }
 
+        var (org, project) = EnsureNames(orgName, projectName);
         var baseUri = BuildBaseUri(session.ApiBaseUrl);
         var requestUri = new Uri(baseUri, "/cli/artifacts/upload");
 
         using var content = new MultipartFormDataContent();
-        content.Add(new StringContent(projectId.ToString()), "projectId");
+        content.Add(new StringContent(org), "orgName");
+        content.Add(new StringContent(project), "projectName");
         content.Add(new StringContent(version), "version");
 
         await using var stream = File.OpenRead(archivePath);
@@ -135,7 +143,7 @@ public sealed class DeployApiClient : IDeployApiClient
         {
             Content = content
         };
-        request.Headers.Add("X-User-Id", session.UserId.ToString());
+        request.Headers.Add("X-User-Email", session.UserEmail);
 
         using var client = _httpClientFactory.CreateClient(HttpClientNames.Deploy);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
@@ -178,48 +186,54 @@ public sealed class DeployApiClient : IDeployApiClient
             cancellationToken);
     }
 
-    public Task<EnvConfigResult> GetEnvironmentAsync(DeploySession session, Guid projectId, ConfigEnvironment environment, CancellationToken cancellationToken = default)
+    public Task<EnvConfigResult> GetEnvironmentAsync(DeploySession session, string orgName, string projectName, ConfigEnvironment environment, CancellationToken cancellationToken = default)
     {
+        var (org, project) = EnsureNames(orgName, projectName);
         var envSegment = environment.ToString();
         return SendAsync<EnvConfigResult>(
             session,
             HttpMethod.Get,
-            $"/cli/env/{projectId}/{envSegment}",
+            $"/cli/env/{Segment(org)}/{Segment(project)}/{envSegment}",
             null,
             cancellationToken);
     }
 
-    public Task<IReadOnlyList<DomainInfo>> GetDomainsAsync(DeploySession session, Guid projectId, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<DomainInfo>> GetDomainsAsync(DeploySession session, string orgName, string projectName, CancellationToken cancellationToken = default)
     {
-        return SendDomainsAsync(session, projectId, cancellationToken);
+        var (org, project) = EnsureNames(orgName, projectName);
+        return SendDomainsAsync(session, org, project, cancellationToken);
     }
 
     public async Task UpsertConfigAsync(
         DeploySession session,
-        Guid projectId,
+        string orgName,
+        string projectName,
         ConfigEnvironment environment,
         ConfigUpsertRequest request,
         CancellationToken cancellationToken = default)
     {
+        var (org, project) = EnsureNames(orgName, projectName);
         var envSegment = environment.ToString();
         await SendAsync<object>(
             session,
             HttpMethod.Post,
-            $"/projects/{projectId}/config/{envSegment}",
+            $"/orgs/{Segment(org)}/projects/{Segment(project)}/config/{envSegment}",
             request,
             cancellationToken,
             useEnumStrings: false).ConfigureAwait(false);
     }
 
-    public Task<RollbackResult> RollbackAsync(DeploySession session, Guid projectId, Guid targetDeploymentId, CancellationToken cancellationToken = default)
+    public Task<RollbackResult> RollbackAsync(DeploySession session, string orgName, string projectName, Guid targetDeploymentId, CancellationToken cancellationToken = default)
     {
+        var (org, project) = EnsureNames(orgName, projectName);
         return SendAsync<RollbackResult>(
             session,
             HttpMethod.Post,
             "/cli/rollback",
             new
             {
-                projectId,
+                orgName = org,
+                projectName = project,
                 targetDeploymentId
             },
             cancellationToken);
@@ -233,7 +247,7 @@ public sealed class DeployApiClient : IDeployApiClient
         }
 
         return await SendAsync<RegisterResult>(
-            new DeploySession(apiBaseUrl, Guid.Empty), // no auth header needed for register
+            new DeploySession(apiBaseUrl, string.Empty), // no auth header needed for register
             HttpMethod.Post,
             "/users/register",
             new { email, password },
@@ -241,12 +255,12 @@ public sealed class DeployApiClient : IDeployApiClient
             includeUserHeader: false).ConfigureAwait(false);
     }
 
-    private async Task<IReadOnlyList<DomainInfo>> SendDomainsAsync(DeploySession session, Guid projectId, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<DomainInfo>> SendDomainsAsync(DeploySession session, string orgName, string projectName, CancellationToken cancellationToken)
     {
         var domains = await SendAsync<List<DomainInfo>>(
             session,
             HttpMethod.Get,
-            $"/cli/domains/{projectId}",
+            $"/cli/domains/{Segment(orgName)}/{Segment(projectName)}",
             null,
             cancellationToken).ConfigureAwait(false);
 
@@ -261,7 +275,7 @@ public sealed class DeployApiClient : IDeployApiClient
         using var request = new HttpRequestMessage(method, requestUri);
         if (includeUserHeader)
         {
-            request.Headers.Add("X-User-Id", session.UserId.ToString());
+            request.Headers.Add("X-User-Email", session.UserEmail);
         }
 
         if (payload is not null)
@@ -300,6 +314,28 @@ public sealed class DeployApiClient : IDeployApiClient
 
         return result;
     }
+
+    private static string EnsureOrg(string orgName)
+    {
+        if (string.IsNullOrWhiteSpace(orgName))
+        {
+            throw new InvalidOperationException("Org name is required.");
+        }
+
+        return orgName.Trim();
+    }
+
+    private static (string Org, string Project) EnsureNames(string orgName, string projectName)
+    {
+        if (string.IsNullOrWhiteSpace(orgName) || string.IsNullOrWhiteSpace(projectName))
+        {
+            throw new InvalidOperationException("Org and project names are required.");
+        }
+
+        return (orgName.Trim(), projectName.Trim());
+    }
+
+    private static string Segment(string value) => Uri.EscapeDataString(value ?? string.Empty);
 
     private static Uri BuildBaseUri(string baseUrl)
     {

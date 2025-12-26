@@ -4,16 +4,23 @@ using Ivory.Cli.Deploy;
 using Ivory.Cli.Execution;
 using Ivory.Cli.Exceptions;
 using Ivory.Cli.Formatting;
+using Ivory.Cli.Helpers;
+using Ivory.Application.Config;
 
 namespace Ivory.Cli.Commands;
 
 internal static class RollbackCommand
 {
-    public static Command Create(IDeployApiClient apiClient, IDeployConfigStore configStore)
+    public static Command Create(IDeployApiClient apiClient, IDeployConfigStore configStore, IProjectConfigProvider configProvider)
     {
-        var projectOption = new Option<Guid>("--project-id")
+        var orgOption = new Option<string>("--org")
         {
-            Description = "Project id to rollback."
+            Description = "Org name to rollback."
+        };
+
+        var projectOption = new Option<string>("--project")
+        {
+            Description = "Project name to rollback."
         };
 
         var targetOption = new Option<Guid>("--target-deployment-id")
@@ -26,17 +33,18 @@ internal static class RollbackCommand
             Description = "Override API base URL for this command."
         };
 
-        var userIdOption = new Option<string>("--user-id")
+        var userEmailOption = new Option<string>("--user-email")
         {
-            Description = "Override user id for this command."
+            Description = "Override user email for this command."
         };
 
         var command = new Command("rollback", "Create a rollback deployment that targets a previous deployment.")
         {
+            orgOption,
             projectOption,
             targetOption,
             apiUrlOption,
-            userIdOption
+            userEmailOption
         };
 
         command.SetAction(async parseResult =>
@@ -46,18 +54,21 @@ internal static class RollbackCommand
                 var session = await DeploySessionResolver.ResolveAsync(
                     configStore,
                     parseResult.GetValue(apiUrlOption),
-                    parseResult.GetValue(userIdOption)).ConfigureAwait(false);
+                    parseResult.GetValue(userEmailOption)).ConfigureAwait(false);
 
-                var projectId = parseResult.GetValue(projectOption);
+                var (orgName, projectName) = await ProjectIdentityResolver.ResolveAsync(
+                    configProvider,
+                    parseResult.GetValue(orgOption),
+                    parseResult.GetValue(projectOption)).ConfigureAwait(false);
                 var targetId = parseResult.GetValue(targetOption);
 
-                if (projectId == Guid.Empty || targetId == Guid.Empty)
+                if (targetId == Guid.Empty)
                 {
-                    throw new IvoryCliException("Both --project-id and --target-deployment-id are required.");
+                    throw new IvoryCliException("--target-deployment-id is required.");
                 }
 
-                var result = await apiClient.RollbackAsync(session, projectId, targetId).ConfigureAwait(false);
-                CliConsole.Success($"Rollback deployment created: {result.Id}");
+                var result = await apiClient.RollbackAsync(session, orgName, projectName, targetId).ConfigureAwait(false);
+                CliConsole.Success($"Rollback deployment created for {orgName}/{projectName}: {result.Id}");
             }).ConfigureAwait(false);
         });
 

@@ -29,6 +29,18 @@ public static class IvoryConfigSerializer
     {
         config = null;
 
+        string? org = null;
+        string? project = null;
+        if (root.TryGetProperty("org", out var orgElem) && orgElem.ValueKind == JsonValueKind.String)
+        {
+            org = orgElem.GetString();
+        }
+
+        if (root.TryGetProperty("project", out var projectElem) && projectElem.ValueKind == JsonValueKind.String)
+        {
+            project = projectElem.GetString();
+        }
+
         var phpSection = new IvoryConfig.PhpSection();
         if (root.TryGetProperty("php", out var phpElem) && phpElem.ValueKind == JsonValueKind.Object)
         {
@@ -91,6 +103,8 @@ public static class IvoryConfigSerializer
 
         config = new IvoryConfig
         {
+            Org = org,
+            Project = project,
             Php = phpSection,
             Scripts = scripts
         };
@@ -117,6 +131,16 @@ public static class IvoryConfigSerializer
     public static void Write(Utf8JsonWriter writer, IvoryConfig config)
     {
         writer.WriteStartObject();
+
+        if (!string.IsNullOrWhiteSpace(config.Org))
+        {
+            writer.WriteString("org", config.Org);
+        }
+
+        if (!string.IsNullOrWhiteSpace(config.Project))
+        {
+            writer.WriteString("project", config.Project);
+        }
 
         writer.WritePropertyName("php");
         writer.WriteStartObject();

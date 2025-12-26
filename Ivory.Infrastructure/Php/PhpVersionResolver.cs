@@ -20,6 +20,11 @@ public class PhpVersionResolver(IProjectConfigProvider configProvider) : IPhpVer
         if (configResult.Config?.Php?.Version is { } projectVersion &&
             !string.IsNullOrWhiteSpace(projectVersion))
         {
+            if (TryParseComposerPhpSpec(projectVersion, out var parsedFromConfig))
+            {
+                return parsedFromConfig;
+            }
+
             return new PhpVersion(projectVersion.Trim());
         }
 

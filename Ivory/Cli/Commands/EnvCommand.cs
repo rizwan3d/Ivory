@@ -6,16 +6,23 @@ using Ivory.Cli.Deploy;
 using Ivory.Cli.Execution;
 using Ivory.Cli.Exceptions;
 using Ivory.Cli.Formatting;
+using Ivory.Cli.Helpers;
+using Ivory.Application.Config;
 
 namespace Ivory.Cli.Commands;
 
 internal static class EnvCommand
 {
-    public static Command Create(IDeployApiClient apiClient, IDeployConfigStore configStore)
+    public static Command Create(IDeployApiClient apiClient, IDeployConfigStore configStore, IProjectConfigProvider configProvider)
     {
-        var projectOption = new Option<Guid>("--project-id")
+        var orgOption = new Option<string>("--org")
         {
-            Description = "Project id to read config for."
+            Description = "Org name to read config for."
+        };
+
+        var projectOption = new Option<string>("--project")
+        {
+            Description = "Project name to read config for."
         };
 
         var environmentOption = new Option<ConfigEnvironment>("--env")
@@ -29,17 +36,18 @@ internal static class EnvCommand
             Description = "Override API base URL for this command."
         };
 
-        var userIdOption = new Option<string>("--user-id")
+        var userEmailOption = new Option<string>("--user-email")
         {
-            Description = "Override user id for this command."
+            Description = "Override user email for this command."
         };
 
         var command = new Command("env", "Fetch environment configuration for a project.")
         {
+            orgOption,
             projectOption,
             environmentOption,
             apiUrlOption,
-            userIdOption
+            userEmailOption
         };
 
         command.SetAction(async parseResult =>
@@ -49,19 +57,18 @@ internal static class EnvCommand
                 var session = await DeploySessionResolver.ResolveAsync(
                     configStore,
                     parseResult.GetValue(apiUrlOption),
-                    parseResult.GetValue(userIdOption)).ConfigureAwait(false);
+                    parseResult.GetValue(userEmailOption)).ConfigureAwait(false);
 
-                var projectId = parseResult.GetValue(projectOption);
-                if (projectId == Guid.Empty)
-                {
-                    throw new IvoryCliException("Project id is required.");
-                }
+                var (orgName, projectName) = await ProjectIdentityResolver.ResolveAsync(
+                    configProvider,
+                    parseResult.GetValue(orgOption),
+                    parseResult.GetValue(projectOption)).ConfigureAwait(false);
 
                 var env = parseResult.GetValue(environmentOption);
 
-                var config = await apiClient.GetEnvironmentAsync(session, projectId, env).ConfigureAwait(false);
+                var config = await apiClient.GetEnvironmentAsync(session, orgName, projectName, env).ConfigureAwait(false);
 
-                CliConsole.Success($"Config for project {projectId} ({env})");
+                CliConsole.Success($"Config for project {orgName}/{projectName} ({env})");
                 Console.WriteLine($"PHP version : {config.PhpVersion}");
                 Console.WriteLine($"Install     : {config.InstallCommand}");
                 Console.WriteLine($"Build       : {config.BuildCommand}");

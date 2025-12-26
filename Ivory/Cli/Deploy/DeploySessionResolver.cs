@@ -8,7 +8,7 @@ internal static class DeploySessionResolver
     public static async Task<DeploySession> ResolveAsync(
         IDeployConfigStore configStore,
         string? apiBaseOverride,
-        string? userIdOverride,
+        string? userEmailOverride,
         CancellationToken cancellationToken = default)
     {
         var config = await configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
@@ -19,18 +19,18 @@ internal static class DeploySessionResolver
 
         if (string.IsNullOrWhiteSpace(apiBase))
         {
-            throw new IvoryCliException("Missing API base URL. Pass --api-url or run 'iv login --api-url <url> --user-id <guid>'.");
+            throw new IvoryCliException("Missing API base URL. Pass --api-url or run 'iv login --api-url <url> --user-email <email>'.");
         }
 
-        var userIdValue = userIdOverride
-                          ?? Environment.GetEnvironmentVariable("IVORY_DEPLOY_USER_ID")
-                          ?? config.UserId?.ToString();
+        var userEmail = userEmailOverride
+                        ?? Environment.GetEnvironmentVariable("IVORY_DEPLOY_USER_EMAIL")
+                        ?? config.UserEmail;
 
-        if (string.IsNullOrWhiteSpace(userIdValue) || !Guid.TryParse(userIdValue, out var userId))
+        if (string.IsNullOrWhiteSpace(userEmail))
         {
-            throw new IvoryCliException("Missing or invalid user id. Pass --user-id or run 'iv login --user-id <guid>'.");
+            throw new IvoryCliException("Missing user email. Pass --user-email or run 'iv login --user-email <email>'.");
         }
 
-        return new DeploySession(apiBase.Trim(), userId);
+        return new DeploySession(apiBase.Trim(), userEmail.Trim());
     }
 }

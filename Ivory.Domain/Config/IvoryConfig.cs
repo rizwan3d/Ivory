@@ -2,6 +2,8 @@
 
 public sealed class IvoryConfig
 {
+    public string? Org { get; set; }
+    public string? Project { get; set; }
     public PhpSection Php { get; init; } = new();
     public Dictionary<string, IvoryScript> Scripts { get; init; }
         = new(StringComparer.OrdinalIgnoreCase);

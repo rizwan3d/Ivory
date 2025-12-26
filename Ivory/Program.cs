@@ -42,9 +42,9 @@ internal static class Program
         try
         {
             var builder = Host.CreateApplicationBuilder(args);
-            builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.None);
-            builder.Logging.AddFilter("System.Net.Http.SocketsHttpHandler", LogLevel.None);
-            builder.Logging.AddFilter("Microsoft.Extensions.Http.DefaultHttpClientFactory", LogLevel.None);
+            builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Critical);
+            builder.Logging.AddFilter("System.Net.Http.SocketsHttpHandler", LogLevel.Critical);
+            builder.Logging.AddFilter("Microsoft.Extensions.Http.DefaultHttpClientFactory", LogLevel.Critical);
             ConfigureServices(builder.Services);
 
             using IHost host = builder.Build();

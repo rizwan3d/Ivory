@@ -34,12 +34,12 @@ public enum RoutingMode
     Server
 }
 
-public sealed record DeploySession(string ApiBaseUrl, Guid UserId);
+public sealed record DeploySession(string ApiBaseUrl, string UserEmail);
 
 public sealed class DeployCliConfig
 {
     public string? ApiBaseUrl { get; set; }
-    public Guid? UserId { get; set; }
+    public string? UserEmail { get; set; }
     public Guid? LastTokenId { get; set; }
     public string? LastTokenPrefix { get; set; }
     public string? LastTokenSecret { get; set; }

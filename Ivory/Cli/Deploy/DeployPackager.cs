@@ -16,7 +16,8 @@ internal static class DeployPackager
         "artifacts/",
         "*.user",
         "*.swp",
-        "*.log"
+        "*.log",
+        "*vendor/",
     };
 
     public static async Task<string> CreateArchiveAsync(string sourceDirectory, CancellationToken cancellationToken = default)
@@ -30,7 +31,6 @@ internal static class DeployPackager
         var archivePath = Path.Combine(Path.GetTempPath(), $"ivory-deploy-{Guid.NewGuid():N}.zip");
 
         var archive = await ZipFile.OpenAsync(archivePath, ZipArchiveMode.Create, cancellationToken).ConfigureAwait(false);
-        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             foreach (var file in EnumerateFiles(sourceDirectory, ignore))
@@ -44,11 +44,8 @@ internal static class DeployPackager
                 }
 
                 var entryName = relativePath.Replace("\\", "/");
-                existing.Add(entryName);
                 await archive.CreateEntryFromFileAsync(file, entryName, CompressionLevel.Optimal, cancellationToken).ConfigureAwait(false);
             }
-
-            AddGeneratedDefaults(archive, existing);
         }
         finally
         {
@@ -91,80 +88,6 @@ internal static class DeployPackager
                 yield return file;
             }
         }
-    }
-
-    private static void AddGeneratedDefaults(ZipArchive archive, HashSet<string> existingPaths)
-    {
-        void AddText(string path, string content)
-        {
-            if (existingPaths.Contains(path))
-            {
-                return;
-            }
-
-            var entry = archive.CreateEntry(path);
-            using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
-            writer.Write(content);
-        }
-
-        AddText("Dockerfile", """
-FROM php:8.2-fpm-alpine
-RUN apk add --no-cache nginx supervisor curl
-WORKDIR /var/www/app
-COPY . /var/www/app
-
-COPY .docker/nginx.conf /etc/nginx/nginx.conf
-COPY .docker/supervisord.conf /etc/supervisord.conf
-
-EXPOSE 80
-CMD ["/usr/bin/supervisord","-c","/etc/supervisord.conf"]
-""");
-
-        AddText(".docker/nginx.conf", """
-worker_processes  1;
-events { worker_connections  1024; }
-http {
-    include       /etc/nginx/mime.types;
-    sendfile      on;
-    server {
-        listen 80;
-        root /var/www/app/public;
-        index index.php;
-        location /health { return 200 "ok"; }
-        location / {
-            try_files $uri /index.php?$query_string;
-        }
-        location ~ \.php$ {
-            fastcgi_pass 127.0.0.1:9000;
-            include fastcgi_params;
-            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        }
-    }
-}
-""");
-
-        AddText(".docker/supervisord.conf", """
-[supervisord]
-nodaemon=true
-[program:php-fpm]
-command=php-fpm -F
-[program:nginx]
-command=nginx -g "daemon off;"
-""");
-
-        AddText("docker-compose.yml", """
-services:
-  app:
-    build: .
-    environment:
-      APP_ENV: production
-    ports:
-      - "8080:80"
-    tmpfs:
-      - /tmp
-      - /var/www/app/runtime
-    stop_grace_period: 20s
-""");
     }
 }
 

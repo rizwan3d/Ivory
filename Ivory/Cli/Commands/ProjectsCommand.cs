@@ -4,16 +4,18 @@ using Ivory.Cli.Deploy;
 using Ivory.Cli.Execution;
 using Ivory.Cli.Exceptions;
 using Ivory.Cli.Formatting;
+using Ivory.Cli.Helpers;
+using Ivory.Application.Config;
 
 namespace Ivory.Cli.Commands;
 
 internal static class ProjectsCommand
 {
-    public static Command Create(IDeployApiClient apiClient, IDeployConfigStore configStore)
+    public static Command Create(IDeployApiClient apiClient, IDeployConfigStore configStore, IProjectConfigProvider configProvider)
     {
-        var orgOption = new Option<Guid>("--org-id")
+        var orgOption = new Option<string>("--org")
         {
-            Description = "Org id.",
+            Description = "Org name.",
         };
 
         var list = new Command("list", "List projects in an org.")
@@ -25,10 +27,10 @@ internal static class ProjectsCommand
         {
             await CommandExecutor.RunAsync("projects:list", async _ =>
             {
-                var session = await DeploySessionResolver.ResolveAsync(configStore, parseResult.GetValue(CommonOptions.ApiUrl), parseResult.GetValue(CommonOptions.UserId)).ConfigureAwait(false);
-                var orgId = await ResolveOrgAsync(apiClient, session, parseResult.GetValue(orgOption)).ConfigureAwait(false);
+                var session = await DeploySessionResolver.ResolveAsync(configStore, parseResult.GetValue(CommonOptions.ApiUrl), parseResult.GetValue(CommonOptions.UserEmail)).ConfigureAwait(false);
+                var orgName = await ResolveOrgAsync(apiClient, configProvider, session, parseResult.GetValue(orgOption)).ConfigureAwait(false);
 
-                var projects = await apiClient.GetProjectsAsync(session, orgId).ConfigureAwait(false);
+                var projects = await apiClient.GetProjectsAsync(session, orgName).ConfigureAwait(false);
                 if (projects.Count == 0)
                 {
                     CliConsole.Info("No projects found.");
@@ -37,7 +39,7 @@ internal static class ProjectsCommand
 
                 foreach (var p in projects)
                 {
-                    Console.WriteLine($"- {p.Name} ({p.Id}) org={p.OrgId}");
+                    Console.WriteLine($"- {p.Name} org={p.OrgName}");
                 }
             }).ConfigureAwait(false);
         });
@@ -56,30 +58,30 @@ internal static class ProjectsCommand
         {
             await CommandExecutor.RunAsync("projects:create", async _ =>
             {
-                var session = await DeploySessionResolver.ResolveAsync(configStore, parseResult.GetValue(CommonOptions.ApiUrl), parseResult.GetValue(CommonOptions.UserId)).ConfigureAwait(false);
-                var orgId = await ResolveOrgAsync(apiClient, session, parseResult.GetValue(orgOption)).ConfigureAwait(false);
+                var session = await DeploySessionResolver.ResolveAsync(configStore, parseResult.GetValue(CommonOptions.ApiUrl), parseResult.GetValue(CommonOptions.UserEmail)).ConfigureAwait(false);
+                var orgName = await ResolveOrgAsync(apiClient, configProvider, session, parseResult.GetValue(orgOption)).ConfigureAwait(false);
                 var name = parseResult.GetValue(nameOption) ?? string.Empty;
 
                 if (string.IsNullOrWhiteSpace(name)) throw new IvoryCliException("Project name is required.");
 
-                var project = await apiClient.CreateProjectAsync(session, orgId, name).ConfigureAwait(false);
-                CliConsole.Success($"Project created: {project.Name} ({project.Id})");
+                var project = await apiClient.CreateProjectAsync(session, orgName, name).ConfigureAwait(false);
+                CliConsole.Success($"Project created: {project.Name} ({project.Id}) in org {project.OrgName}");
             }).ConfigureAwait(false);
         });
 
         var command = new Command("projects", "Manage projects.");
         command.Options.Add(CommonOptions.ApiUrl);
-        command.Options.Add(CommonOptions.UserId);
+        command.Options.Add(CommonOptions.UserEmail);
         command.Subcommands.Add(list);
         command.Subcommands.Add(create);
         return command;
     }
 
-    private static async Task<Guid> ResolveOrgAsync(IDeployApiClient apiClient, DeploySession session, Guid provided)
+    private static async Task<string> ResolveOrgAsync(IDeployApiClient apiClient, IProjectConfigProvider configProvider, DeploySession session, string? provided)
     {
-        if (provided != Guid.Empty)
+        if (!string.IsNullOrWhiteSpace(provided))
         {
-            return provided;
+            return provided!.Trim();
         }
 
         var orgs = await apiClient.GetOrgsAsync(session).ConfigureAwait(false);
@@ -90,10 +92,17 @@ internal static class ProjectsCommand
 
         if (orgs.Count > 1)
         {
-            var choices = string.Join(", ", orgs.Select(o => $"{o.OrgName} ({o.OrgId})"));
-            throw new IvoryCliException($"Org id is required when you belong to multiple orgs. Available: {choices}");
+            try
+            {
+                return await ProjectIdentityResolver.ResolveOrgAsync(configProvider, null).ConfigureAwait(false);
+            }
+            catch (IvoryCliException)
+            {
+                var choices = string.Join(", ", orgs.Select(o => $"{o.OrgName}"));
+                throw new IvoryCliException($"Org name is required when you belong to multiple orgs. Available: {choices}");
+            }
         }
 
-        return orgs[0].OrgId;
+        return orgs[0].OrgName;
     }
 }

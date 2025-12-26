@@ -71,14 +71,14 @@ internal static class CommandLineFactory
         rootCommand.Subcommands.Add(ScaffoldDockerCommand.Create(resolver));
         rootCommand.Subcommands.Add(RegisterCommand.Create(deployClient));
         rootCommand.Subcommands.Add(LoginCommand.Create(deployClient, deployConfigStore));
-        rootCommand.Subcommands.Add(DeployCommand.Create(deployClient, deployConfigStore));
+        rootCommand.Subcommands.Add(DeployCommand.Create(deployClient, deployConfigStore, configProvider));
         rootCommand.Subcommands.Add(LogsCommand.Create(deployClient, deployConfigStore));
-        rootCommand.Subcommands.Add(EnvCommand.Create(deployClient, deployConfigStore));
-        rootCommand.Subcommands.Add(DomainsCommand.Create(deployClient, deployConfigStore));
+        rootCommand.Subcommands.Add(EnvCommand.Create(deployClient, deployConfigStore, configProvider));
+        rootCommand.Subcommands.Add(DomainsCommand.Create(deployClient, deployConfigStore, configProvider));
         rootCommand.Subcommands.Add(ConfigCommand.Create(deployClient, deployConfigStore, configProvider));
-        rootCommand.Subcommands.Add(RollbackCommand.Create(deployClient, deployConfigStore));
+        rootCommand.Subcommands.Add(RollbackCommand.Create(deployClient, deployConfigStore, configProvider));
         rootCommand.Subcommands.Add(OrgsCommand.Create(deployClient, deployConfigStore));
-        rootCommand.Subcommands.Add(ProjectsCommand.Create(deployClient, deployConfigStore));
+        rootCommand.Subcommands.Add(ProjectsCommand.Create(deployClient, deployConfigStore, configProvider));
 
         return rootCommand;
     }
